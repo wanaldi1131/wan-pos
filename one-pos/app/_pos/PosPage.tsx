@@ -90,7 +90,6 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
   // Checkout overlay
   const [checkingOut, setCheckingOut]   = useState(false)
   const [payMethod, setPayMethod]       = useState<PayMethod>('tunai')
-  const [amountPaid, setAmountPaid]     = useState('')
   const [submitting, setSubmitting]     = useState(false)
   const [lastNota, setLastNota]         = useState<string | null>(null)
   const [checkoutErr, setCheckoutErr]   = useState<string | null>(null)
@@ -100,8 +99,6 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
   const tier       = customer?.category ?? 'retail'
   const cartTotal  = cart.reduce((s, i) => s + i.subtotal, 0)
   const cartCount  = cart.reduce((s, i) => s + i.qty, 0)
-  const paid       = Number(amountPaid) || 0
-  const change     = paid - cartTotal
 
   // ── Fetch categories once ─────────────────────────────────────────────────
 
@@ -254,6 +251,14 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
     )
   }
 
+  function setCartQty(key: string, qty: number) {
+    if (qty < 1) return
+    setCart(prev => prev.map(i => i.key === key
+      ? { ...i, qty, subtotal: qty * i.unit_price }
+      : i
+    ))
+  }
+
   // ── Confirm sale ──────────────────────────────────────────────────────────
 
   async function confirmSale() {
@@ -318,7 +323,6 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
     setCustQuery('')
     setFulfillment('ambil')
     setPayMethod('tunai')
-    setAmountPaid('')
     setCheckingOut(false)
     setSubmitting(false)
   }
@@ -331,7 +335,15 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
       {/* ── Top bar ── */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-gray-900 border-b border-white/10 shrink-0">
         <span className="text-white font-bold text-base">Adi Jaya POS</span>
-        <span className="text-gray-400 text-sm">{kasirName}</span>
+        <div className="flex items-center gap-4">
+          <a
+            href="/history"
+            className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
+          >
+            Riwayat
+          </a>
+          <span className="text-gray-600 text-xs">{kasirName}</span>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -442,7 +454,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
               )}
 
               {/* Qty + tombol tambah dalam satu baris */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 pl-10">
                 <button
                   onClick={() => setPickQty(q => Math.max(1, q - 1))}
                   className="w-12 h-12 rounded-xl bg-white/10 hover:bg-white/20 text-white text-2xl font-light flex items-center justify-center shrink-0"
@@ -555,7 +567,18 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
                           onClick={() => updateQty(item.key, -1)}
                           className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-lg flex items-center justify-center leading-none"
                         >−</button>
-                        <span className="text-white text-sm font-semibold w-7 text-center">{item.qty}</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          value={item.qty}
+                          onChange={e => {
+                            const v = parseInt(e.target.value, 10)
+                            if (!isNaN(v) && v >= 1) setCartQty(item.key, v)
+                          }}
+                          onFocus={e => e.target.select()}
+                          className="w-12 text-white text-sm font-semibold text-center bg-white/10 border border-white/15 focus:border-indigo-500 rounded-lg h-8 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
                         <button
                           onClick={() => updateQty(item.key, 1)}
                           className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-lg flex items-center justify-center leading-none"
@@ -654,31 +677,9 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
               ))}
             </div>
 
-            {/* Input nominal (tunai saja) */}
-            {payMethod === 'tunai' && (
-              <div>
-                <p className="text-gray-500 text-xs mb-2">Nominal bayar</p>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  className="w-full bg-white/8 border border-white/10 text-white text-2xl font-bold placeholder-gray-600 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="0"
-                  value={amountPaid}
-                  onChange={e => setAmountPaid(e.target.value)}
-                />
-                {paid > 0 && (
-                  <p className={`mt-2 font-semibold text-sm ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {change >= 0
-                      ? `Kembalian: ${rp(change)}`
-                      : `Kurang: ${rp(-change)}`}
-                  </p>
-                )}
-              </div>
-            )}
-
             <Button
               onClick={confirmSale}
-              disabled={submitting || (payMethod === 'tunai' && paid > 0 && change < 0)}
+              disabled={submitting}
               className="w-full h-14 text-lg font-bold rounded-2xl bg-green-600 hover:bg-green-500 border-0 text-white disabled:opacity-30"
             >
               {submitting ? 'Menyimpan...' : '✓ Konfirmasi Penjualan'}

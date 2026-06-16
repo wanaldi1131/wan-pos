@@ -252,7 +252,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
   }
 
   function setCartQty(key: string, qty: number) {
-    if (qty < 1) return
+    if (qty <= 0) return
     setCart(prev => prev.map(i => i.key === key
       ? { ...i, qty, subtotal: qty * i.unit_price }
       : i
@@ -337,10 +337,22 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
         <span className="text-white font-bold text-base">Adi Jaya POS</span>
         <div className="flex items-center gap-4">
           <a
+            href="/kas"
+            className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
+          >
+            Kas
+          </a>
+          <a
             href="/history"
             className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
           >
             Riwayat
+          </a>
+          <a
+            href="/admin"
+            className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
+          >
+            Admin
           </a>
           <span className="text-gray-600 text-xs">{kasirName}</span>
         </div>
@@ -461,12 +473,13 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
                 >−</button>
                 <input
                   type="number"
-                  inputMode="numeric"
-                  min={1}
+                  inputMode="decimal"
+                  min={0.01}
+                  step="any"
                   value={pickQty}
                   onChange={e => {
-                    const v = parseInt(e.target.value, 10)
-                    setPickQty(isNaN(v) || v < 1 ? 1 : v)
+                    const v = parseFloat(e.target.value)
+                    if (!isNaN(v) && v > 0) setPickQty(v)
                   }}
                   onFocus={e => e.target.select()}
                   className="w-20 text-white text-2xl font-bold text-center bg-white/10 border border-white/15 focus:border-indigo-500 rounded-xl h-12 outline-none focus:ring-2 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -569,12 +582,13 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
                         >−</button>
                         <input
                           type="number"
-                          inputMode="numeric"
-                          min={1}
+                          inputMode="decimal"
+                          min={0.01}
+                          step="any"
                           value={item.qty}
                           onChange={e => {
-                            const v = parseInt(e.target.value, 10)
-                            if (!isNaN(v) && v >= 1) setCartQty(item.key, v)
+                            const v = parseFloat(e.target.value)
+                            if (!isNaN(v) && v > 0) setCartQty(item.key, v)
                           }}
                           onFocus={e => e.target.select()}
                           className="w-12 text-white text-sm font-semibold text-center bg-white/10 border border-white/15 focus:border-indigo-500 rounded-lg h-8 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"

@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { User } from '@supabase/supabase-js'
 
+// ── Types ──────────────────────────────────────────────────────
+
 type Sale = {
   id: number
   code: string
@@ -21,19 +23,40 @@ type Sale = {
 
 type SaleItem = {
   id: number
+  product_id: number
+  unit_id: number
   product_name: string
   unit_name: string
+  factor_to_base: number
   qty: number
   unit_price: number
   subtotal: number
 }
 
-type Filter     = 'today' | 'week' | 'all'
-type PayFilter  = 'all' | 'lunas' | 'belum'
+// Item yang bisa diretur (setelah dikurangi yang sudah diretur sebelumnya)
+type ReturnableItem = {
+  sale_item_id: number
+  product_id: number
+  product_name: string
+  unit_name: string
+  unit_price: number
+  factor_to_base: number
+  qty: number             // qty asli
+  already_returned: number
+  max_qty: number         // qty - already_returned
+}
+
+type Filter    = 'today' | 'week' | 'all'
+type PayFilter = 'all' | 'lunas' | 'belum'
+
+// ── Constants & helpers ────────────────────────────────────────
 
 const PAGE_SIZE = 30
 
 const rp = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+
+const fmtQty = (n: number) =>
+  Number.isInteger(n) ? String(n) : n.toLocaleString('id-ID', { maximumFractionDigits: 4 })
 
 const PAY_LABEL: Record<string, string> = {
   tunai: 'Tunai', transfer: 'Transfer', cod: 'COD', kredit: 'Kredit',
@@ -74,9 +97,10 @@ function buildQuery(sb: SupabaseClient, filter: Filter, payFilter: PayFilter) {
   }
 
   if (payFilter !== 'all') q = q.eq('pay_status', payFilter)
-
   return q
 }
+
+// ── Component ──────────────────────────────────────────────────
 
 export default function HistoryPage() {
   const [user, setUser]       = useState<User | null | undefined>(undefined)
@@ -97,6 +121,18 @@ export default function HistoryPage() {
   const [itemsCache, setItemsCache]     = useState<Record<number, SaleItem[]>>({})
   const [loadingItems, setLoadingItems] = useState(false)
 
+  // ── Retur state ───────────────────────────────────────────────
+  const [returningId, setReturningId]         = useState<number | null>(null)
+  const [returnableItems, setReturnableItems] = useState<ReturnableItem[]>([])
+  const [returnQtys, setReturnQtys]           = useState<Record<number, number>>({})
+  const [returnNote, setReturnNote]           = useState('')
+  const [returnRefundMethod, setReturnRefundMethod] = useState<'tunai' | 'transfer' | 'nota'>('tunai')
+  const [loadingReturn, setLoadingReturn]     = useState(false)
+  const [submittingReturn, setSubmittingReturn] = useState(false)
+  const [returnSuccess, setReturnSuccess]     = useState<string | null>(null)
+
+  // ── Auth ──────────────────────────────────────────────────────
+
   useEffect(() => {
     createClient().auth.getUser().then(({ data }) => setUser(data.user ?? null))
   }, [])
@@ -105,7 +141,8 @@ export default function HistoryPage() {
     if (user === null) window.location.href = '/'
   }, [user])
 
-  // Initial load — reset list when filter changes
+  // ── Initial load ──────────────────────────────────────────────
+
   useEffect(() => {
     if (!user) return
     setLoading(true)
@@ -126,7 +163,8 @@ export default function HistoryPage() {
     load()
   }, [user, filter, payFilter])
 
-  // Load more — append to existing list
+  // ── Load more (infinite scroll) ───────────────────────────────
+
   async function loadMore() {
     if (loadingMore) return
     setLoadingMore(true)
@@ -141,51 +179,6 @@ export default function HistoryPage() {
     setLoadingMore(false)
   }
 
-  // Server-side search: debounce 400ms, query by code + customer name
-  useEffect(() => {
-    const trimmed = search.trim()
-    if (!trimmed || !user) {
-      setSearchResults(null)
-      setSearchLoading(false)
-      return
-    }
-
-    setSearchLoading(true)
-    const t = setTimeout(async () => {
-      const sb   = createClient()
-      const term = `%${trimmed}%`
-
-      const [{ data: byCode }, { data: matchCusts }] = await Promise.all([
-        sb.from('sales')
-          .select('id, code, cashier_id, customer_id, fulfillment, pay_method, pay_status, total, created_at')
-          .ilike('code', term)
-          .order('created_at', { ascending: false })
-          .limit(50),
-        sb.from('customers').select('id').ilike('name', term),
-      ])
-
-      const custIds = (matchCusts ?? []).map((c: any) => c.id)
-      const { data: byCust } = custIds.length > 0
-        ? await sb.from('sales')
-            .select('id, code, cashier_id, customer_id, fulfillment, pay_method, pay_status, total, created_at')
-            .in('customer_id', custIds)
-            .order('created_at', { ascending: false })
-            .limit(50)
-        : { data: [] }
-
-      const merged = [...(byCode ?? []), ...(byCust ?? [])]
-      const unique = merged.filter((s, i) => merged.findIndex(r => r.id === s.id) === i)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-      const enriched = await enrichSales(sb, unique)
-      setSearchResults(enriched)
-      setSearchLoading(false)
-    }, 400)
-
-    return () => clearTimeout(t)
-  }, [search, user])
-
-  // Auto-load more when sentinel comes into view
   useEffect(() => {
     const el = sentinelRef.current
     if (!el) return
@@ -198,8 +191,49 @@ export default function HistoryPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, loadingMore, sales.length, filter])
 
+  // ── Server-side search ────────────────────────────────────────
+
+  useEffect(() => {
+    const trimmed = search.trim()
+    if (!trimmed || !user) { setSearchResults(null); setSearchLoading(false); return }
+
+    setSearchLoading(true)
+    const t = setTimeout(async () => {
+      const sb   = createClient()
+      const term = `%${trimmed}%`
+
+      const [{ data: byCode }, { data: matchCusts }] = await Promise.all([
+        sb.from('sales')
+          .select('id, code, cashier_id, customer_id, fulfillment, pay_method, pay_status, total, created_at')
+          .ilike('code', term).order('created_at', { ascending: false }).limit(50),
+        sb.from('customers').select('id').ilike('name', term),
+      ])
+
+      const custIds = (matchCusts ?? []).map((c: any) => c.id)
+      const { data: byCust } = custIds.length > 0
+        ? await sb.from('sales')
+            .select('id, code, cashier_id, customer_id, fulfillment, pay_method, pay_status, total, created_at')
+            .in('customer_id', custIds).order('created_at', { ascending: false }).limit(50)
+        : { data: [] }
+
+      const merged  = [...(byCode ?? []), ...(byCust ?? [])]
+      const unique  = merged.filter((s, i) => merged.findIndex(r => r.id === s.id) === i)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+      setSearchResults(await enrichSales(sb, unique))
+      setSearchLoading(false)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [search, user])
+
+  // ── Toggle detail (expand) ────────────────────────────────────
+
   async function toggleDetail(saleId: number) {
-    if (expandedId === saleId) { setExpandedId(null); return }
+    if (expandedId === saleId) {
+      setExpandedId(null)
+      cancelRetur()
+      return
+    }
 
     setExpandedId(saleId)
     if (itemsCache[saleId]) return
@@ -223,22 +257,149 @@ export default function HistoryPage() {
 
     const [{ data: prods }, { data: units }] = await Promise.all([
       sb.from('products').select('id, name').in('id', prodIds),
-      sb.from('product_units').select('id, unit_name').in('id', unitIds),
+      sb.from('product_units').select('id, unit_name, factor_to_base').in('id', unitIds),
     ])
 
     setItemsCache(c => ({
       ...c,
       [saleId]: items.map((i: any) => ({
-        id:           i.id,
-        product_name: prods?.find((p: any) => String(p.id) === String(i.product_id))?.name ?? '—',
-        unit_name:    units?.find((u: any) => String(u.id) === String(i.unit_id))?.unit_name ?? '—',
-        qty:          i.qty,
-        unit_price:   i.unit_price,
-        subtotal:     i.subtotal,
+        id:             i.id,
+        product_id:     i.product_id,
+        unit_id:        i.unit_id,
+        product_name:   prods?.find((p: any) => String(p.id) === String(i.product_id))?.name ?? '—',
+        unit_name:      units?.find((u: any) => String(u.id) === String(i.unit_id))?.unit_name ?? '—',
+        factor_to_base: units?.find((u: any) => String(u.id) === String(i.unit_id))?.factor_to_base ?? 1,
+        qty:            i.qty,
+        unit_price:     i.unit_price,
+        subtotal:       i.subtotal,
       })),
     }))
     setLoadingItems(false)
   }
+
+  // ── Retur helpers ─────────────────────────────────────────────
+
+  function cancelRetur() {
+    setReturningId(null)
+    setReturnableItems([])
+    setReturnQtys({})
+    setReturnNote('')
+    setReturnRefundMethod('tunai')
+  }
+
+  async function startRetur(saleId: number) {
+    const items = itemsCache[saleId]
+    if (!items || items.length === 0) return
+
+    setReturningId(saleId)
+    setReturnQtys({})
+    setReturnNote('')
+    setLoadingReturn(true)
+
+    const sb = createClient()
+    const saleItemIds = items.map(i => i.id)
+
+    // Cari qty yang sudah diretur sebelumnya per item
+    const { data: prevReturns } = await sb
+      .from('return_items')
+      .select('sale_item_id, qty')
+      .in('sale_item_id', saleItemIds)
+
+    const returnedMap: Record<number, number> = {}
+    for (const r of prevReturns ?? []) {
+      returnedMap[r.sale_item_id] = (returnedMap[r.sale_item_id] ?? 0) + Number(r.qty)
+    }
+
+    const list: ReturnableItem[] = items
+      .map(item => {
+        const already  = returnedMap[item.id] ?? 0
+        const max_qty  = Number(item.qty) - already
+        return {
+          sale_item_id:    item.id,
+          product_id:      item.product_id,
+          product_name:    item.product_name,
+          unit_name:       item.unit_name,
+          unit_price:      item.unit_price,
+          factor_to_base:  item.factor_to_base,
+          qty:             Number(item.qty),
+          already_returned: already,
+          max_qty,
+        }
+      })
+      .filter(i => i.max_qty > 0)  // sembunyikan item yang sudah full-retur
+
+    setReturnableItems(list)
+    setLoadingReturn(false)
+  }
+
+  async function confirmRetur(saleId: number) {
+    const toReturn = returnableItems.filter(i => (returnQtys[i.sale_item_id] ?? 0) > 0)
+    if (toReturn.length === 0 || !user) return
+
+    setSubmittingReturn(true)
+    const sb    = createClient()
+    const total = toReturn.reduce((s, i) => s + (returnQtys[i.sale_item_id]! * i.unit_price), 0)
+
+    // 1. Buat sale_return
+    const { data: ret, error } = await sb
+      .from('sale_returns')
+      .insert({
+        sale_id:       saleId,
+        cashier_id:    user.id,
+        note:          returnNote || null,
+        total,
+        refund_method: returnRefundMethod,
+      })
+      .select('id')
+      .single()
+
+    if (error || !ret) {
+      console.error('Gagal retur:', error?.message)
+      setSubmittingReturn(false)
+      return
+    }
+
+    // 2. Insert return_items
+    await sb.from('return_items').insert(
+      toReturn.map(i => {
+        const qty = returnQtys[i.sale_item_id]!
+        return {
+          return_id:    ret.id,
+          sale_item_id: i.sale_item_id,
+          qty,
+          base_qty:     qty * i.factor_to_base,
+          unit_price:   i.unit_price,
+          subtotal:     qty * i.unit_price,
+        }
+      })
+    )
+
+    // 3. Stock movement positif — barang kembali ke gudang
+    await sb.from('stock_movements').insert(
+      toReturn.map(i => {
+        const qty = returnQtys[i.sale_item_id]!
+        return {
+          product_id:   i.product_id,
+          warehouse_id: 1,
+          base_qty:     qty * i.factor_to_base,   // positif = masuk gudang
+          type:         'sale_return',
+          ref_table:    'sale_returns',
+          ref_id:       ret.id,
+          created_by:   user.id,
+        }
+      })
+    )
+
+    cancelRetur()
+    setSubmittingReturn(false)
+    setReturnSuccess(`Retur ${rp(total)} berhasil dicatat`)
+    setTimeout(() => setReturnSuccess(null), 4000)
+
+    // Invalidate cache item (mungkin qty retur sudah berubah)
+    setItemsCache(c => { const copy = { ...c }; delete copy[saleId]; return copy })
+  }
+
+  // ── Render guard ──────────────────────────────────────────────
 
   if (user === undefined || user === null) {
     return (
@@ -251,6 +412,8 @@ export default function HistoryPage() {
   const trimmed    = search.trim()
   const displayed  = trimmed ? (searchResults ?? []) : sales
   const grandTotal = displayed.reduce((s, i) => s + i.total, 0)
+
+  // ── UI ────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col select-none">
@@ -271,9 +434,7 @@ export default function HistoryPage() {
               key={f}
               onClick={() => { setFilter(f); setSearch('') }}
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                filter === f
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white/8 text-gray-400 hover:bg-white/15'
+                filter === f ? 'bg-indigo-600 text-white' : 'bg-white/8 text-gray-400 hover:bg-white/15'
               }`}
             >
               {f === 'today' ? 'Hari Ini' : f === 'week' ? '7 Hari' : 'Semua'}
@@ -293,9 +454,9 @@ export default function HistoryPage() {
               onClick={() => setPayFilter(val)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 payFilter === val
-                  ? val === 'lunas'   ? 'bg-green-600/30 text-green-300 ring-1 ring-green-500/50'
-                  : val === 'belum'   ? 'bg-amber-600/30 text-amber-300 ring-1 ring-amber-500/50'
-                  :                     'bg-white/15 text-white'
+                  ? val === 'lunas' ? 'bg-green-600/30 text-green-300 ring-1 ring-green-500/50'
+                  : val === 'belum' ? 'bg-amber-600/30 text-amber-300 ring-1 ring-amber-500/50'
+                  :                   'bg-white/15 text-white'
                   : 'bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300'
               }`}
             >
@@ -329,22 +490,27 @@ export default function HistoryPage() {
           ) : (
             <>
               {displayed.map(sale => {
-                const isOpen = expandedId === sale.id
-                const items  = itemsCache[sale.id]
+                const isOpen    = expandedId === sale.id
+                const items     = itemsCache[sale.id]
+                const isRetur   = returningId === sale.id
+                const returTotal = returnableItems.reduce(
+                  (s, i) => s + (returnQtys[i.sale_item_id] ?? 0) * i.unit_price, 0
+                )
+                const hasAnyRetur = returnableItems.some(i => (returnQtys[i.sale_item_id] ?? 0) > 0)
 
                 return (
                   <div
                     key={sale.id}
                     className={`border rounded-2xl transition-colors ${
                       isOpen
-                        ? 'bg-gray-900 border-indigo-500/40'
+                        ? isRetur
+                          ? 'bg-gray-900 border-amber-500/40'
+                          : 'bg-gray-900 border-indigo-500/40'
                         : 'bg-white/5 border-white/10 hover:border-white/20'
                     }`}
                   >
-                    <button
-                      className="w-full text-left p-4"
-                      onClick={() => toggleDetail(sale.id)}
-                    >
+                    {/* Header */}
+                    <button className="w-full text-left p-4" onClick={() => toggleDetail(sale.id)}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -358,9 +524,7 @@ export default function HistoryPage() {
                               {PAY_LABEL[sale.pay_method] ?? sale.pay_method}
                             </span>
                             {sale.fulfillment === 'antar' && (
-                              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-400">
-                                Antar
-                              </span>
+                              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-400">Antar</span>
                             )}
                           </div>
                           <div className="flex items-center gap-1.5 text-gray-500 text-xs flex-wrap">
@@ -372,9 +536,7 @@ export default function HistoryPage() {
                             </span>
                             <span>·</span>
                             <span>{sale.kasir_name}</span>
-                            {sale.customer_name && (
-                              <><span>·</span><span>{sale.customer_name}</span></>
-                            )}
+                            {sale.customer_name && <><span>·</span><span>{sale.customer_name}</span></>}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -384,45 +546,184 @@ export default function HistoryPage() {
                       </div>
                     </button>
 
+                    {/* Detail / Retur panel */}
                     {isOpen && (
                       <div className="border-t border-white/10 px-4 pb-4">
+
+                        {/* Success banner */}
+                        {returnSuccess && (
+                          <div className="mt-3 px-4 py-2.5 rounded-xl bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-medium">
+                            ✓ {returnSuccess}
+                          </div>
+                        )}
+
                         {loadingItems && !items ? (
                           <p className="text-gray-500 text-xs text-center py-3">Memuat item...</p>
                         ) : !items || items.length === 0 ? (
                           <p className="text-gray-600 text-xs text-center py-3">Tidak ada item</p>
+
+                        ) : isRetur ? (
+                          /* ── MODE RETUR ── */
+                          <div className="mt-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-amber-400 text-xs font-bold uppercase tracking-wide">Pilih Item & Qty Retur</p>
+                              <button
+                                onClick={cancelRetur}
+                                className="text-gray-500 hover:text-white text-xs"
+                              >✕ Batal</button>
+                            </div>
+
+                            {loadingReturn ? (
+                              <p className="text-gray-500 text-xs text-center py-3">Memuat data retur...</p>
+                            ) : returnableItems.length === 0 ? (
+                              <p className="text-gray-600 text-xs text-center py-3">Semua item sudah diretur</p>
+                            ) : (
+                              <>
+                                <div className="divide-y divide-white/5">
+                                  {returnableItems.map(item => {
+                                    const qty = returnQtys[item.sale_item_id] ?? 0
+                                    const setQty = (v: number) => setReturnQtys(prev => ({
+                                      ...prev,
+                                      [item.sale_item_id]: Math.max(0, Math.min(v, item.max_qty)),
+                                    }))
+                                    return (
+                                      <div key={item.sale_item_id} className="py-3 flex items-center gap-3">
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-white text-sm font-medium truncate">{item.product_name}</p>
+                                          <p className="text-gray-500 text-xs mt-0.5">
+                                            {fmtQty(item.qty)} {item.unit_name}
+                                            {item.already_returned > 0 && (
+                                              <span className="text-amber-600 ml-1.5">· diretur {fmtQty(item.already_returned)}</span>
+                                            )}
+                                            <span className="text-gray-600 ml-1.5">· maks {fmtQty(item.max_qty)}</span>
+                                          </p>
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <button
+                                            onClick={() => setQty(qty - 1)}
+                                            className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm flex items-center justify-center"
+                                          >−</button>
+                                          <input
+                                            type="number"
+                                            inputMode="decimal"
+                                            min={0}
+                                            max={item.max_qty}
+                                            step="any"
+                                            value={qty === 0 ? '' : qty}
+                                            placeholder="0"
+                                            onChange={e => {
+                                              const v = parseFloat(e.target.value)
+                                              setReturnQtys(prev => ({
+                                                ...prev,
+                                                [item.sale_item_id]: isNaN(v) ? 0 : Math.min(v, item.max_qty),
+                                              }))
+                                            }}
+                                            onFocus={e => e.target.select()}
+                                            className="w-16 text-white text-sm text-center bg-white/10 border border-white/15 focus:border-amber-500 rounded-lg h-7 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                          />
+                                          <button
+                                            onClick={() => setQty(qty + 1)}
+                                            className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm flex items-center justify-center"
+                                          >+</button>
+                                          <span className="text-gray-600 text-xs w-10 text-right">{item.unit_name}</span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+
+                                <input
+                                  placeholder="Catatan retur (opsional)…"
+                                  value={returnNote}
+                                  onChange={e => setReturnNote(e.target.value)}
+                                  className="w-full bg-white/5 border border-white/10 focus:border-amber-500 text-white placeholder-gray-600 rounded-xl px-3 py-2 text-sm outline-none"
+                                />
+
+                                {/* Metode refund */}
+                                <div>
+                                  <p className="text-gray-600 text-xs mb-1.5">Kembalikan via</p>
+                                  <div className="flex gap-2">
+                                    {([
+                                      ['tunai',    'Tunai'],
+                                      ['transfer', 'Transfer'],
+                                      ['nota',     'Nota/Kredit'],
+                                    ] as const).map(([val, label]) => (
+                                      <button
+                                        key={val}
+                                        onClick={() => setReturnRefundMethod(val)}
+                                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                          returnRefundMethod === val
+                                            ? 'bg-amber-600 text-white'
+                                            : 'bg-white/8 text-gray-400 hover:bg-white/15'
+                                        }`}
+                                      >
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {returnRefundMethod !== 'tunai' && (
+                                    <p className="text-gray-600 text-xs mt-1">
+                                      Tidak mempengaruhi saldo kas harian
+                                    </p>
+                                  )}
+                                </div>
+
+                                <button
+                                  onClick={() => confirmRetur(sale.id)}
+                                  disabled={!hasAnyRetur || submittingReturn}
+                                  className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-30 text-white text-sm font-bold transition-colors"
+                                >
+                                  {submittingReturn
+                                    ? 'Memproses…'
+                                    : hasAnyRetur
+                                      ? `Konfirmasi Retur · ${rp(returTotal)}`
+                                      : 'Masukkan qty retur'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+
                         ) : (
-                          <table className="w-full mt-3 text-sm">
-                            <thead>
-                              <tr className="text-gray-600 text-xs uppercase tracking-wide">
-                                <th className="text-left pb-2 font-medium">Produk</th>
-                                <th className="text-right pb-2 font-medium">Qty</th>
-                                <th className="text-right pb-2 font-medium">Harga</th>
-                                <th className="text-right pb-2 font-medium">Subtotal</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                              {items.map(item => (
-                                <tr key={item.id}>
-                                  <td className="py-2 text-white pr-3">{item.product_name}</td>
-                                  <td className="py-2 text-gray-400 text-right whitespace-nowrap">
-                                    {item.qty} {item.unit_name}
-                                  </td>
-                                  <td className="py-2 text-gray-400 text-right whitespace-nowrap">
-                                    {rp(item.unit_price)}
-                                  </td>
-                                  <td className="py-2 text-indigo-300 font-semibold text-right whitespace-nowrap">
-                                    {rp(item.subtotal)}
-                                  </td>
+                          /* ── MODE NORMAL ── */
+                          <>
+                            <table className="w-full mt-3 text-sm">
+                              <thead>
+                                <tr className="text-gray-600 text-xs uppercase tracking-wide">
+                                  <th className="text-left pb-2 font-medium">Produk</th>
+                                  <th className="text-right pb-2 font-medium">Qty</th>
+                                  <th className="text-right pb-2 font-medium">Harga</th>
+                                  <th className="text-right pb-2 font-medium">Subtotal</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr className="border-t border-white/10">
-                                <td colSpan={3} className="pt-3 text-gray-500 text-xs">Total</td>
-                                <td className="pt-3 text-white font-bold text-right">{rp(sale.total)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-white/5">
+                                {items.map(item => (
+                                  <tr key={item.id}>
+                                    <td className="py-2 text-white pr-3">{item.product_name}</td>
+                                    <td className="py-2 text-gray-400 text-right whitespace-nowrap">
+                                      {fmtQty(Number(item.qty))} {item.unit_name}
+                                    </td>
+                                    <td className="py-2 text-gray-400 text-right whitespace-nowrap">{rp(item.unit_price)}</td>
+                                    <td className="py-2 text-indigo-300 font-semibold text-right whitespace-nowrap">{rp(item.subtotal)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="border-t border-white/10">
+                                  <td colSpan={3} className="pt-3 text-gray-500 text-xs">Total</td>
+                                  <td className="pt-3 text-white font-bold text-right">{rp(sale.total)}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                onClick={() => startRetur(sale.id)}
+                                className="text-xs text-amber-500 hover:text-amber-400 font-medium transition-colors"
+                              >
+                                Buat Retur →
+                              </button>
+                            </div>
+                          </>
                         )}
                       </div>
                     )}

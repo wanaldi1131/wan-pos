@@ -55,7 +55,16 @@ type SaleItem = {
   unit: { unit_name: string } | null
 }
 
-type Tab = 'antaran' | 'belum_lunas'
+type Tab = 'antaran' | 'belum_lunas' | 'kasir'
+
+type KasirProfile = {
+  id: string
+  full_name: string
+  staff_code: string | null
+  email_login: string | null
+  active: boolean
+  created_at: string
+}
 
 // ── Helpers ────────────────────────────────────────────────────
 const rp = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
@@ -189,6 +198,21 @@ export default function AdminPage() {
   const [updatingId, setUpdatingId]     = useState<number | null>(null)
   const [updatingSjId, setUpdatingSjId] = useState<number | null>(null)
 
+  // Kasir list + detail
+  const [kasirList, setKasirList]           = useState<KasirProfile[]>([])
+  const [loadingKasirList, setLoadingKasirList] = useState(false)
+  const [selectedKasir, setSelectedKasir]   = useState<KasirProfile | null>(null)
+  const [togglingId, setTogglingId]         = useState<string | null>(null)
+  const [showForm, setShowForm]             = useState(false)
+
+  // Tambah kasir form
+  const [kasirName, setKasirName]       = useState('')
+  const [kasirCode, setKasirCode]       = useState('')
+  const [kasirEmail, setKasirEmail]     = useState('')
+  const [kasirPin, setKasirPin]         = useState('')
+  const [kasirMsg, setKasirMsg]         = useState<{ ok: boolean; text: string } | null>(null)
+  const [savingKasir, setSavingKasir]   = useState(false)
+
   // ── Auth ────────────────────────────────────────────────────
   useEffect(() => {
     sb.auth.getUser().then(({ data }) => setUser(data.user ?? null))
@@ -196,6 +220,37 @@ export default function AdminPage() {
   useEffect(() => {
     if (user === null) window.location.href = '/'
   }, [user])
+
+  // ── Load kasir list ──────────────────────────────────────────
+  const loadKasirList = useCallback(async () => {
+    setLoadingKasirList(true)
+    const { data } = await sb
+      .from('profiles')
+      .select('id, full_name, staff_code, email_login, active, created_at')
+      .eq('role', 'kasir')
+      .order('created_at', { ascending: true })
+    setKasirList(data ?? [])
+    setLoadingKasirList(false)
+  }, [sb])
+
+  useEffect(() => {
+    if (tab === 'kasir') loadKasirList()
+  }, [tab, loadKasirList])
+
+  async function toggleActive(kasir: KasirProfile) {
+    setTogglingId(kasir.id)
+    const { data } = await sb
+      .from('profiles')
+      .update({ active: !kasir.active })
+      .eq('id', kasir.id)
+      .select('id, full_name, staff_code, email_login, active, created_at')
+      .single()
+    setTogglingId(null)
+    if (data) {
+      setKasirList(prev => prev.map(k => k.id === kasir.id ? data : k))
+      setSelectedKasir(data)
+    }
+  }
 
   // ── Load data ────────────────────────────────────────────────
   const loadAntaran = useCallback(async () => {
@@ -338,6 +393,7 @@ export default function AdminPage() {
         {([
           ['antaran',     'Antaran',     pendingAntaran,   'bg-amber-500 text-black'],
           ['belum_lunas', 'Belum Lunas', totalBelumLunas,  'bg-red-500 text-white'],
+          ['kasir',       'Kasir',       0,                ''],
         ] as [Tab, string, number, string][]).map(([v, label, count, badgeCls]) => (
           <button
             key={v}
@@ -585,7 +641,7 @@ export default function AdminPage() {
               })
             )
 
-          ) : (
+          ) : tab === 'belum_lunas' ? (
 
             /* ── TAB BELUM LUNAS ── */
             belumLunasSales.length === 0 ? (
@@ -627,6 +683,175 @@ export default function AdminPage() {
                 </div>
               ))
             )
+          ) : (
+
+            /* ── TAB KASIR ── */
+            <div className="max-w-lg mx-auto mt-4 space-y-4">
+
+              {/* ── List kasir ── */}
+              <div className="flex items-center justify-between">
+                <p className="text-white font-bold text-base">Daftar Kasir</p>
+                <button
+                  onClick={() => { setShowForm(f => !f); setKasirMsg(null) }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                >
+                  {showForm ? 'Tutup Form' : '+ Tambah Kasir'}
+                </button>
+              </div>
+
+              {/* Form tambah kasir */}
+              {showForm && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+                  <p className="text-white font-semibold text-sm">Kasir Baru</p>
+                  <div>
+                    <label className="text-gray-400 text-xs mb-1 block">Nama Lengkap</label>
+                    <input
+                      className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                      placeholder="cth: Budi Santoso"
+                      value={kasirName}
+                      onChange={e => setKasirName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-xs mb-1 block">Kode Staff</label>
+                    <input
+                      className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                      placeholder="cth: staff03"
+                      value={kasirCode}
+                      onChange={e => setKasirCode(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-xs mb-1 block">Email Login</label>
+                    <input
+                      type="email"
+                      className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                      placeholder="cth: budi@gmail.com"
+                      value={kasirEmail}
+                      onChange={e => setKasirEmail(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-xs mb-1 block">PIN (6 digit)</label>
+                    <input
+                      className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10 font-mono tracking-widest"
+                      placeholder="••••••"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={kasirPin}
+                      onChange={e => setKasirPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    />
+                  </div>
+                  {kasirMsg && (
+                    <p className={`text-xs px-3 py-2 rounded-xl ${kasirMsg.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                      {kasirMsg.text}
+                    </p>
+                  )}
+                  <button
+                    disabled={savingKasir || !kasirName || !kasirCode || !kasirEmail || kasirPin.length !== 6}
+                    onClick={async () => {
+                      setSavingKasir(true)
+                      setKasirMsg(null)
+                      const res = await fetch('/api/kasir', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: kasirName, staff_code: kasirCode, email: kasirEmail, pin: kasirPin }),
+                      })
+                      const json = await res.json()
+                      setSavingKasir(false)
+                      if (res.ok) {
+                        setKasirMsg({ ok: true, text: `Kasir "${kasirName}" berhasil dibuat.` })
+                        setKasirName(''); setKasirCode(''); setKasirEmail(''); setKasirPin('')
+                        loadKasirList()
+                      } else {
+                        setKasirMsg({ ok: false, text: json.error ?? 'Gagal membuat kasir.' })
+                      }
+                    }}
+                    className="w-full h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white font-bold text-sm transition-colors"
+                  >
+                    {savingKasir ? 'Menyimpan...' : 'Buat Kasir'}
+                  </button>
+                </div>
+              )}
+
+              {/* Kasir list */}
+              {loadingKasirList ? (
+                <p className="text-gray-500 text-sm text-center py-8">Memuat...</p>
+              ) : kasirList.length === 0 ? (
+                <p className="text-gray-600 text-sm text-center py-8">Belum ada kasir terdaftar</p>
+              ) : (
+                <div className="space-y-2">
+                  {kasirList.map(k => (
+                    <div key={k.id}>
+                      <button
+                        onClick={() => setSelectedKasir(prev => prev?.id === k.id ? null : k)}
+                        className={`w-full text-left px-4 py-3 rounded-2xl border transition-colors flex items-center justify-between gap-3 ${
+                          selectedKasir?.id === k.id
+                            ? 'bg-gray-900 border-indigo-500/50'
+                            : 'bg-white/5 border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${k.active ? 'bg-green-400' : 'bg-gray-600'}`} />
+                          <div className="min-w-0">
+                            <p className="text-white font-semibold text-sm truncate">{k.full_name}</p>
+                            <p className="text-gray-500 text-xs">{k.staff_code ?? '—'}</p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md shrink-0 ${
+                          k.active ? 'bg-green-500/15 text-green-400' : 'bg-white/8 text-gray-500'
+                        }`}>
+                          {k.active ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </button>
+
+                      {/* Detail panel */}
+                      {selectedKasir?.id === k.id && (
+                        <div className="mx-2 mt-1 mb-1 bg-gray-900 border border-indigo-500/20 rounded-2xl p-4 space-y-3">
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div>
+                              <p className="text-gray-500 text-xs mb-0.5">Nama</p>
+                              <p className="text-white font-medium">{k.full_name}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 text-xs mb-0.5">Kode Staff</p>
+                              <p className="text-white font-medium">{k.staff_code ?? '—'}</p>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-gray-500 text-xs mb-0.5">Email Login</p>
+                              <p className="text-white font-medium break-all">{k.email_login ?? '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 text-xs mb-0.5">Status</p>
+                              <p className={`font-semibold ${k.active ? 'text-green-400' : 'text-gray-500'}`}>
+                                {k.active ? 'Aktif' : 'Nonaktif'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 text-xs mb-0.5">Terdaftar</p>
+                              <p className="text-white">{fmtDate(k.created_at)}</p>
+                            </div>
+                          </div>
+                          <button
+                            disabled={togglingId === k.id}
+                            onClick={() => toggleActive(k)}
+                            className={`w-full h-9 rounded-xl text-xs font-bold transition-colors disabled:opacity-40 ${
+                              k.active
+                                ? 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20'
+                                : 'bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20'
+                            }`}
+                          >
+                            {togglingId === k.id ? '...' : k.active ? 'Nonaktifkan' : 'Aktifkan'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
           )}
         </div>
       </div>

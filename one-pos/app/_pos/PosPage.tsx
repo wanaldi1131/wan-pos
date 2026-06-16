@@ -354,7 +354,18 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
           >
             Admin
           </a>
-          <span className="text-gray-600 text-xs">{kasirName}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-xs">{kasirName}</span>
+            <button
+              onClick={async () => {
+                await createClient().auth.signOut()
+                window.location.href = '/'
+              }}
+              className="text-gray-600 hover:text-red-400 text-xs transition-colors"
+            >
+              Keluar
+            </button>
+          </div>
         </div>
       </div>
 

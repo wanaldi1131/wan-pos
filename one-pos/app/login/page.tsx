@@ -21,13 +21,19 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // Admin login
+  const [adminMode, setAdminMode] = useState(false)
+  const [adminEmail, setAdminEmail] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
+
   useEffect(() => {
     createClient()
       .from('profiles')
       .select('id, full_name, email_login')
       .eq('role', 'kasir')
       .eq('active', true)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        console.log('[login] kasir data:', data, 'error:', error)
         setKasirs(data ?? [])
         setLoadingKasirs(false)
       })
@@ -65,6 +71,67 @@ export default function LoginPage() {
     }
   }
 
+  async function doAdminLogin(e: React.SyntheticEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError('')
+    const { error: authError } = await createClient().auth.signInWithPassword({
+      email: adminEmail,
+      password: adminPassword,
+    })
+    setSubmitting(false)
+    if (authError) {
+      setError('Email atau password salah')
+    }
+  }
+
+  if (adminMode) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-6 p-6">
+        <button
+          className="text-gray-500 hover:text-gray-300 text-sm self-start"
+          onClick={() => { setAdminMode(false); setError('') }}
+        >
+          ← Kembali
+        </button>
+
+        <Card className="w-full max-w-xs">
+          <CardHeader>
+            <p className="text-center text-gray-400 text-sm">Masuk sebagai</p>
+            <p className="text-center text-white text-2xl font-bold">Admin</p>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={doAdminLogin} className="flex flex-col gap-4">
+              <input
+                type="email"
+                placeholder="Email"
+                autoFocus
+                value={adminEmail}
+                onChange={e => setAdminEmail(e.target.value)}
+                className="w-full bg-white/8 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={adminPassword}
+                onChange={e => setAdminPassword(e.target.value)}
+                className="w-full bg-white/8 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+              />
+              {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+              <Button
+                type="submit"
+                disabled={submitting || !adminEmail || !adminPassword}
+                className="w-full h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-500 border-0 text-white font-bold disabled:opacity-30"
+              >
+                {submitting ? 'Memeriksa...' : 'Masuk'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   if (!selected) {
     return (
       <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-8 p-6">
@@ -87,6 +154,13 @@ export default function LoginPage() {
             ))}
           </div>
         )}
+
+        <button
+          onClick={() => setAdminMode(true)}
+          className="text-gray-600 hover:text-gray-400 text-sm transition-colors"
+        >
+          Masuk sebagai Admin
+        </button>
       </div>
     )
   }

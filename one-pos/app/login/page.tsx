@@ -87,9 +87,9 @@ export default function LoginPage() {
 
   if (adminMode) {
     return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-6 p-6">
+      <div className="min-h-screen bg-gray-950 relative flex flex-col items-center justify-center gap-6 p-6">
         <button
-          className="text-gray-500 hover:text-gray-300 text-sm self-start"
+          className="absolute top-4 left-4 text-gray-500 hover:text-gray-300 text-sm transition-colors"
           onClick={() => { setAdminMode(false); setError('') }}
         >
           ← Kembali
@@ -166,9 +166,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-6 p-6">
+    <div className="min-h-screen bg-gray-950 relative flex flex-col items-center justify-center gap-6 p-6">
       <button
-        className="text-gray-500 hover:text-gray-300 text-sm self-start"
+        className="absolute top-4 left-4 text-gray-500 hover:text-gray-300 text-sm transition-colors"
         onClick={() => { setSelected(null); setPin(''); setError('') }}
       >
         ← Ganti kasir

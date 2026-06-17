@@ -55,7 +55,44 @@ type SaleItem = {
   unit: { unit_name: string } | null
 }
 
-type Tab = 'antaran' | 'belum_lunas' | 'kasir'
+type Tab = 'antaran' | 'belum_lunas' | 'kasir' | 'pendapatan' | 'kas_tunai'
+
+type KasTunaiDay = {
+  date: string
+  total: number; count: number
+  tunai_count: number; tunai_total: number
+  transfer_count: number; transfer_total: number
+  hutang_count: number; hutang_total: number
+  retur_tunai: number; retur_transfer: number   // kas keluar karena refund
+}
+
+type KasTunaiInvoice = {
+  id: number
+  code: string
+  total: number         // positif = masuk, negatif = retur keluar
+  pay_method: string    // pay_method untuk sale, refund_method untuk retur
+  paid_at: string
+  customer_name: string | null
+  is_hutang: boolean
+  is_retur: boolean
+}
+
+type DailyRevenue = {
+  date: string        // YYYY-MM-DD
+  txn_count: number
+  total: number       // gross penjualan
+  retur: number       // total retur
+  net: number         // total - retur
+  tunai: number
+  transfer: number
+  cod: number
+  kredit: number
+  tunai_count: number
+  transfer_count: number
+  cod_count: number
+  kredit_count: number
+  belum_count: number
+}
 
 type KasirProfile = {
   id: string
@@ -177,6 +214,7 @@ export default function AdminPage() {
   const sb = createClient()
 
   const [user, setUser]             = useState<User | null | undefined>(undefined)
+  const [userRole, setUserRole]     = useState<string | null>(null)
   const [tab, setTab]               = useState<Tab>('antaran')
   const [antaRanSales, setAntaRanSales]       = useState<SaleAntar[]>([])
   const [belumLunasSales, setBelumLunasSales] = useState<SaleBelumLunas[]>([])
@@ -198,12 +236,29 @@ export default function AdminPage() {
   const [updatingId, setUpdatingId]     = useState<number | null>(null)
   const [updatingSjId, setUpdatingSjId] = useState<number | null>(null)
 
+  // Search
+  const [pengirimanSearch, setPengirimanSearch] = useState('')
+  const [belumLunasSearch, setBelumLunasSearch] = useState('')
+
   // Kasir list + detail
   const [kasirList, setKasirList]           = useState<KasirProfile[]>([])
   const [loadingKasirList, setLoadingKasirList] = useState(false)
   const [selectedKasir, setSelectedKasir]   = useState<KasirProfile | null>(null)
   const [togglingId, setTogglingId]         = useState<string | null>(null)
   const [showForm, setShowForm]             = useState(false)
+
+  // Pendapatan
+  const [pendapatanData, setPendapatanData]           = useState<DailyRevenue[]>([])
+  const [loadingPendapatan, setLoadingPendapatan]     = useState(false)
+  const [expandedPendapatan, setExpandedPendapatan]   = useState<string | null>(null)
+
+  // Kas Tunai
+  const [kasTunaiData, setKasTunaiData]               = useState<KasTunaiDay[]>([])
+  const [loadingKasTunai, setLoadingKasTunai]         = useState(false)
+  const [kasTunaiError, setKasTunaiError]             = useState<string | null>(null)
+  const [expandedKasTunai, setExpandedKasTunai]       = useState<string | null>(null)
+  const [kasTunaiInvoices, setKasTunaiInvoices]       = useState<Record<string, KasTunaiInvoice[]>>({})
+  const [loadingKasTunaiDetail, setLoadingKasTunaiDetail] = useState<string | null>(null)
 
   // Tambah kasir form
   const [kasirName, setKasirName]       = useState('')
@@ -215,7 +270,14 @@ export default function AdminPage() {
 
   // ── Auth ────────────────────────────────────────────────────
   useEffect(() => {
-    sb.auth.getUser().then(({ data }) => setUser(data.user ?? null))
+    sb.auth.getUser().then(async ({ data }) => {
+      setUser(data.user ?? null)
+      if (data.user) {
+        const { data: profile } = await sb
+          .from('profiles').select('role').eq('id', data.user.id).single()
+        setUserRole(profile?.role ?? null)
+      }
+    })
   }, [])
   useEffect(() => {
     if (user === null) window.location.href = '/'
@@ -289,11 +351,186 @@ export default function AdminPage() {
     setDrivers(data ?? [])
   }, [sb])
 
+  const loadPendapatan = useCallback(async () => {
+    setLoadingPendapatan(true)
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
+    const [{ data: salesData }, { data: returnsData }] = await Promise.all([
+      sb.from('sales')
+        .select('created_at, total, pay_method, pay_status')
+        .eq('voided', false)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false }),
+      sb.from('sale_returns')
+        .select('created_at, total')
+        .gte('created_at', since),
+    ])
+
+    const toKey = (iso: string) => {
+      const d = new Date(iso)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    const map: Record<string, DailyRevenue> = {}
+    const empty = (): DailyRevenue => ({
+      date: '', txn_count: 0, total: 0, retur: 0, net: 0,
+      tunai: 0, transfer: 0, cod: 0, kredit: 0,
+      tunai_count: 0, transfer_count: 0, cod_count: 0, kredit_count: 0,
+      belum_count: 0,
+    })
+
+    for (const s of salesData ?? []) {
+      const key = toKey(s.created_at)
+      if (!map[key]) { map[key] = { ...empty(), date: key } }
+      const d = map[key]
+      d.txn_count++
+      d.total += Number(s.total)
+      if (s.pay_method === 'tunai')          { d.tunai    += Number(s.total); d.tunai_count++ }
+      else if (s.pay_method === 'transfer')  { d.transfer += Number(s.total); d.transfer_count++ }
+      else if (s.pay_method === 'cod')       { d.cod      += Number(s.total); d.cod_count++ }
+      else                                   { d.kredit   += Number(s.total); d.kredit_count++ }
+      if (s.pay_status === 'belum') d.belum_count++
+    }
+
+    for (const r of returnsData ?? []) {
+      const key = toKey(r.created_at)
+      if (!map[key]) { map[key] = { ...empty(), date: key } }
+      map[key].retur += Number(r.total)
+    }
+
+    const result = Object.values(map)
+      .map(d => ({ ...d, net: d.total - d.retur }))
+      .sort((a, b) => b.date.localeCompare(a.date))
+
+    setPendapatanData(result)
+    setLoadingPendapatan(false)
+  }, [sb])
+
   useEffect(() => {
     if (!user) return
     setLoading(true)
     Promise.all([loadAntaran(), loadBelumLunas(), loadDrivers()]).then(() => setLoading(false))
   }, [user, loadAntaran, loadBelumLunas, loadDrivers])
+
+  useEffect(() => {
+    if (tab === 'pendapatan' && user) loadPendapatan()
+  }, [tab, user, loadPendapatan])
+
+  const loadKasTunai = useCallback(async () => {
+    setLoadingKasTunai(true)
+    setKasTunaiError(null)
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
+    const { data, error } = await sb
+      .from('sales')
+      .select('paid_at, total, pay_method')
+      .not('paid_at', 'is', null)
+      .gte('paid_at', since)
+      .eq('voided', false)
+
+    if (error) {
+      setKasTunaiError(error.message)
+      setLoadingKasTunai(false)
+      return
+    }
+
+    const toKey = (iso: string) => {
+      const d = new Date(iso)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    const { data: returData } = await sb
+      .from('sale_returns')
+      .select('created_at, total, refund_method')
+      .in('refund_method', ['tunai', 'transfer'])
+      .gte('created_at', since)
+
+    const emptyDay = (key: string): KasTunaiDay => ({
+      date: key, total: 0, count: 0,
+      tunai_count: 0, tunai_total: 0,
+      transfer_count: 0, transfer_total: 0,
+      hutang_count: 0, hutang_total: 0,
+      retur_tunai: 0, retur_transfer: 0,
+    })
+
+    const map: Record<string, KasTunaiDay> = {}
+    for (const s of data ?? []) {
+      const key = toKey(s.paid_at!)
+      if (!map[key]) map[key] = emptyDay(key)
+      const amt = Number(s.total)
+      map[key].total += amt
+      map[key].count++
+      if (s.pay_method === 'tunai') { map[key].tunai_count++; map[key].tunai_total += amt }
+      else if (s.pay_method === 'transfer') { map[key].transfer_count++; map[key].transfer_total += amt }
+      else { map[key].hutang_count++; map[key].hutang_total += amt }
+    }
+    for (const r of returData ?? []) {
+      const key = toKey(r.created_at)
+      if (!map[key]) map[key] = emptyDay(key)
+      const amt = Number(r.total)
+      map[key].total -= amt
+      if (r.refund_method === 'tunai') map[key].retur_tunai += amt
+      else map[key].retur_transfer += amt
+    }
+
+    setKasTunaiData(
+      Object.values(map).sort((a, b) => b.date.localeCompare(a.date))
+    )
+    setLoadingKasTunai(false)
+  }, [sb])
+
+  async function loadKasTunaiDetail(dateKey: string) {
+    if (kasTunaiInvoices[dateKey]) return
+    setLoadingKasTunaiDetail(dateKey)
+    const [y, m, d] = dateKey.split('-').map(Number)
+    const start = new Date(y, m - 1, d).toISOString()
+    const end   = new Date(y, m - 1, d + 1).toISOString()
+
+    const [{ data: sales }, { data: returns }] = await Promise.all([
+      sb.from('sales')
+        .select('id, code, total, pay_method, paid_at, customer:customers(name)')
+        .gte('paid_at', start).lt('paid_at', end)
+        .eq('voided', false)
+        .order('paid_at', { ascending: true }),
+      sb.from('sale_returns')
+        .select('id, total, refund_method, created_at, sale:sales(code, customer:customers(name))')
+        .in('refund_method', ['tunai', 'transfer'])
+        .gte('created_at', start).lt('created_at', end)
+        .order('created_at', { ascending: true }),
+    ])
+
+    const saleEntries: KasTunaiInvoice[] = (sales ?? []).map((s: any) => ({
+      id:            s.id,
+      code:          s.code,
+      total:         Number(s.total),
+      pay_method:    s.pay_method,
+      paid_at:       s.paid_at,
+      customer_name: s.customer?.name ?? null,
+      is_hutang:     s.pay_method === 'cod' || s.pay_method === 'kredit',
+      is_retur:      false,
+    }))
+
+    const returEntries: KasTunaiInvoice[] = (returns ?? []).map((r: any) => ({
+      id:            r.id,
+      code:          r.sale?.code ?? '—',
+      total:         -Number(r.total),
+      pay_method:    r.refund_method,
+      paid_at:       r.created_at,
+      customer_name: r.sale?.customer?.name ?? null,
+      is_hutang:     false,
+      is_retur:      true,
+    }))
+
+    const merged = [...saleEntries, ...returEntries]
+      .sort((a, b) => a.paid_at.localeCompare(b.paid_at))
+
+    setKasTunaiInvoices(prev => ({ ...prev, [dateKey]: merged }))
+    setLoadingKasTunaiDetail(null)
+  }
+
+  useEffect(() => {
+    if (tab === 'kas_tunai' && user) loadKasTunai()
+  }, [tab, user, loadKasTunai])
 
   // ── Expand & fetch items ─────────────────────────────────────
   async function toggleExpand(saleId: number) {
@@ -346,20 +583,25 @@ export default function AdminPage() {
     loadAntaran()
   }
 
-  // ── Tandai terkirim ─────────────────────────────────────────
+  // ── Tandai terkirim + kurangi stok (via RPC atomik) ─────────
   async function markTerkirim(sjId: number) {
     setUpdatingSjId(sjId); setError(null)
-    const { error: err } = await sb.from('surat_jalan').update({ status: 'terkirim' }).eq('id', sjId)
+    const { error: err } = await sb.rpc('mark_sj_terkirim', { p_sj_id: sjId })
     if (err) setError(err.message)
     else loadAntaran()
     setUpdatingSjId(null)
   }
 
-  // ── Toggle pay_status ────────────────────────────────────────
+  // ── Toggle pay_status — set paid_at saat tandai lunas ───────
   async function togglePayStatus(saleId: number, current: string) {
     setUpdatingId(saleId); setError(null)
     const next = current === 'lunas' ? 'belum' : 'lunas'
-    const { error: err } = await sb.from('sales').update({ pay_status: next }).eq('id', saleId)
+    const { error: err } = await sb.from('sales')
+      .update({
+        pay_status: next,
+        paid_at:    next === 'lunas' ? new Date().toISOString() : null,
+      })
+      .eq('id', saleId)
     if (err) setError(err.message)
     else { await loadAntaran(); await loadBelumLunas() }
     setUpdatingId(null)
@@ -374,8 +616,26 @@ export default function AdminPage() {
     )
   }
 
-  const pendingAntaran = antaRanSales.filter(s => deliveryStatus(s.surat_jalan) !== 'terkirim').length
-  const totalBelumLunas = belumLunasSales.length
+  const isAdmin             = userRole === 'admin' || userRole === 'owner'
+  const displayedPengiriman = antaRanSales.filter(s => deliveryStatus(s.surat_jalan) !== 'terkirim')
+  const pendingAntaran      = displayedPengiriman.length
+  const totalBelumLunas     = belumLunasSales.length
+
+  const filteredPengiriman  = pengirimanSearch.trim()
+    ? displayedPengiriman.filter(s => {
+        const q = pengirimanSearch.trim().toLowerCase()
+        return s.code.toLowerCase().includes(q)
+          || (s.customer?.name ?? '').toLowerCase().includes(q)
+      })
+    : displayedPengiriman
+
+  const filteredBelumLunas  = belumLunasSearch.trim()
+    ? belumLunasSales.filter(s => {
+        const q = belumLunasSearch.trim().toLowerCase()
+        return s.code.toLowerCase().includes(q)
+          || (s.customer?.name ?? '').toLowerCase().includes(q)
+      })
+    : belumLunasSales
 
   // ── Render ───────────────────────────────────────────────────
   return (
@@ -389,16 +649,18 @@ export default function AdminPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1.5 px-4 py-2.5 bg-gray-900/50 border-b border-white/10 shrink-0">
+      <div className="flex gap-1.5 px-4 py-2.5 bg-gray-900/50 border-b border-white/10 shrink-0 overflow-x-auto">
         {([
-          ['antaran',     'Antaran',     pendingAntaran,   'bg-amber-500 text-black'],
+          ['antaran',     'Pengiriman',  pendingAntaran,   'bg-amber-500 text-black'],
           ['belum_lunas', 'Belum Lunas', totalBelumLunas,  'bg-red-500 text-white'],
+          ['pendapatan',  'Pendapatan',  0,                ''],
+          ['kas_tunai',   'Kas Tunai',   0,                ''],
           ['kasir',       'Kasir',       0,                ''],
         ] as [Tab, string, number, string][]).map(([v, label, count, badgeCls]) => (
           <button
             key={v}
-            onClick={() => setTab(v)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+            onClick={() => { setTab(v); setPengirimanSearch(''); setBelumLunasSearch('') }}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${
               tab === v ? 'bg-indigo-600 text-white' : 'bg-white/8 text-gray-400 hover:bg-white/15'
             }`}
           >
@@ -427,11 +689,23 @@ export default function AdminPage() {
             <p className="text-gray-500 text-center mt-12 text-sm">Memuat data...</p>
           ) : tab === 'antaran' ? (
 
-            /* ── TAB ANTARAN ── */
-            antaRanSales.length === 0 ? (
-              <p className="text-gray-600 text-center mt-12 text-sm">Belum ada transaksi pengiriman</p>
-            ) : (
-              antaRanSales.map(sale => {
+            /* ── TAB PENGIRIMAN ── */
+            <>
+              <input
+                className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-600 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="Cari nomor invoice atau nama customer..."
+                value={pengirimanSearch}
+                onChange={e => setPengirimanSearch(e.target.value)}
+              />
+
+              {displayedPengiriman.length === 0 ? (
+                <p className="text-gray-600 text-center mt-10 text-sm">Semua pengiriman sudah terkirim 🎉</p>
+              ) : filteredPengiriman.length === 0 ? (
+                <p className="text-gray-600 text-center mt-10 text-sm">
+                  Tidak ditemukan: &ldquo;{pengirimanSearch}&rdquo;
+                </p>
+              ) : (
+                filteredPengiriman.map(sale => {
                 const djStatus   = deliveryStatus(sale.surat_jalan)
                 const activeSj   = sale.surat_jalan.find(s => s.status === 'dimuat') ?? sale.surat_jalan[0] ?? null
                 const isExpanded = expandedId === sale.id
@@ -589,22 +863,24 @@ export default function AdminPage() {
                         {/* Action buttons */}
                         <div className="flex flex-wrap gap-2 pt-1">
 
-                          {/* Toggle pay status */}
-                          <button
-                            onClick={() => togglePayStatus(sale.id, sale.pay_status)}
-                            disabled={updatingId === sale.id}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-40 ${
-                              sale.pay_status === 'lunas'
-                                ? 'bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20'
-                                : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
-                            }`}
-                          >
-                            {updatingId === sale.id ? '...'
-                              : sale.pay_status === 'lunas' ? '✓ Lunas · Ubah ke Belum' : 'Tandai Lunas'}
-                          </button>
+                          {/* Toggle pay status — admin/owner only */}
+                          {isAdmin && (
+                            <button
+                              onClick={() => togglePayStatus(sale.id, sale.pay_status)}
+                              disabled={updatingId === sale.id}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-40 ${
+                                sale.pay_status === 'lunas'
+                                  ? 'bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20'
+                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                              }`}
+                            >
+                              {updatingId === sale.id ? '...'
+                                : sale.pay_status === 'lunas' ? '✓ Lunas · Ubah ke Belum' : 'Tandai Lunas'}
+                            </button>
+                          )}
 
-                          {/* Buat SJ */}
-                          {djStatus === 'none' && !isMakingSj && (
+                          {/* Buat SJ — admin/owner only */}
+                          {isAdmin && djStatus === 'none' && !isMakingSj && (
                             <button
                               onClick={() => { setMakingSjId(sale.id); setSjDriverId(''); setSjPlat('') }}
                               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 transition-colors"
@@ -613,8 +889,8 @@ export default function AdminPage() {
                             </button>
                           )}
 
-                          {/* Tandai terkirim */}
-                          {djStatus === 'dimuat' && activeSj && (
+                          {/* Tandai terkirim — admin/owner only */}
+                          {isAdmin && djStatus === 'dimuat' && activeSj && (
                             <button
                               onClick={() => markTerkirim(activeSj.id)}
                               disabled={updatingSjId === activeSj.id}
@@ -624,7 +900,7 @@ export default function AdminPage() {
                             </button>
                           )}
 
-                          {/* Cetak SJ */}
+                          {/* Cetak SJ — semua role bisa cetak */}
                           {activeSj && items && items.length > 0 && (
                             <button
                               onClick={() => printSJ(activeSj, sale, sale.customer, items)}
@@ -639,15 +915,28 @@ export default function AdminPage() {
                   </div>
                 )
               })
-            )
+              )}
+            </>
 
           ) : tab === 'belum_lunas' ? (
 
             /* ── TAB BELUM LUNAS ── */
-            belumLunasSales.length === 0 ? (
-              <p className="text-gray-600 text-center mt-12 text-sm">Semua transaksi sudah lunas 🎉</p>
-            ) : (
-              belumLunasSales.map(sale => (
+            <>
+              <input
+                className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-600 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="Cari nomor invoice atau nama customer..."
+                value={belumLunasSearch}
+                onChange={e => setBelumLunasSearch(e.target.value)}
+              />
+
+              {belumLunasSales.length === 0 ? (
+                <p className="text-gray-600 text-center mt-10 text-sm">Semua transaksi sudah lunas 🎉</p>
+              ) : filteredBelumLunas.length === 0 ? (
+                <p className="text-gray-600 text-center mt-10 text-sm">
+                  Tidak ditemukan: &ldquo;{belumLunasSearch}&rdquo;
+                </p>
+              ) : (
+                filteredBelumLunas.map(sale => (
                 <div
                   key={sale.id}
                   className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-3"
@@ -659,7 +948,7 @@ export default function AdminPage() {
                         {PAY_LABEL[sale.pay_method] ?? sale.pay_method}
                       </span>
                       {sale.fulfillment === 'antar' && (
-                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-400">Antar</span>
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-400">Pengiriman</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -672,17 +961,334 @@ export default function AdminPage() {
 
                   <div className="flex items-center gap-3 shrink-0">
                     <span className="text-white font-bold">{rp(sale.total)}</span>
-                    <button
-                      onClick={() => togglePayStatus(sale.id, sale.pay_status)}
-                      disabled={updatingId === sale.id}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 transition-colors disabled:opacity-40 whitespace-nowrap"
-                    >
-                      {updatingId === sale.id ? '...' : 'Tandai Lunas'}
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => togglePayStatus(sale.id, sale.pay_status)}
+                        disabled={updatingId === sale.id}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 transition-colors disabled:opacity-40 whitespace-nowrap"
+                      >
+                        {updatingId === sale.id ? '...' : 'Tandai Lunas'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
-            )
+              )}
+            </>
+          ) : tab === 'pendapatan' ? (
+
+            /* ── TAB PENDAPATAN ── */
+            (() => {
+              const now = new Date()
+              const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+              const fmtDay = (key: string) => {
+                const [y, m, d] = key.split('-').map(Number)
+                return new Date(y, m - 1, d).toLocaleDateString('id-ID', {
+                  weekday: 'short', day: 'numeric', month: 'short',
+                })
+              }
+
+              const total30 = pendapatanData.reduce((s, d) => s + d.net, 0)
+              const txn30   = pendapatanData.reduce((s, d) => s + d.txn_count, 0)
+
+              return (
+                <div className="space-y-3 mt-1">
+                  {loadingPendapatan ? (
+                    <p className="text-gray-500 text-center mt-12 text-sm">Memuat data...</p>
+                  ) : pendapatanData.length === 0 ? (
+                    <p className="text-gray-600 text-center mt-12 text-sm">Belum ada transaksi dalam 30 hari</p>
+                  ) : (
+                    <>
+                      {/* Ringkasan 30 hari */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                          <p className="text-gray-500 text-xs">Net 30 Hari</p>
+                          <p className="text-white font-bold text-base mt-0.5">{rp(total30)}</p>
+                        </div>
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                          <p className="text-gray-500 text-xs">Total Transaksi</p>
+                          <p className="text-white font-bold text-base mt-0.5">{txn30} nota</p>
+                        </div>
+                      </div>
+
+                      {/* List per hari */}
+                      {pendapatanData.map(day => {
+                        const isToday  = day.date === todayKey
+                        const isOpen   = expandedPendapatan === day.date
+
+                        const methods = [
+                          { key: 'tunai',    label: 'Tunai',    amount: day.tunai,    count: day.tunai_count,    color: 'text-green-400',  bg: 'bg-green-500/10 border-green-500/20' },
+                          { key: 'transfer', label: 'Transfer', amount: day.transfer, count: day.transfer_count, color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/20' },
+                          { key: 'cod',      label: 'COD',      amount: day.cod,      count: day.cod_count,      color: 'text-amber-400',  bg: 'bg-amber-500/10 border-amber-500/20' },
+                          { key: 'kredit',   label: 'Kredit',   amount: day.kredit,   count: day.kredit_count,   color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' },
+                        ].filter(m => m.amount > 0)
+
+                        return (
+                          <div
+                            key={day.date}
+                            className={`rounded-2xl border transition-colors ${
+                              isOpen
+                                ? isToday ? 'bg-indigo-600/15 border-indigo-500/50' : 'bg-gray-900 border-white/20'
+                                : isToday ? 'bg-indigo-600/10 border-indigo-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+                            }`}
+                          >
+                            {/* Header — bisa diklik */}
+                            <button
+                              className="w-full text-left p-4"
+                              onClick={() => setExpandedPendapatan(isOpen ? null : day.date)}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <p className={`text-sm font-bold ${isToday ? 'text-indigo-300' : 'text-white'}`}>
+                                      {isToday ? 'Hari Ini' : fmtDay(day.date)}
+                                    </p>
+                                    {isToday && (
+                                      <p className="text-gray-500 text-xs">{fmtDay(day.date)}</p>
+                                    )}
+                                  </div>
+                                  <p className="text-gray-500 text-xs mt-0.5">
+                                    {day.txn_count} transaksi
+                                    {day.belum_count > 0 && (
+                                      <span className="text-amber-600 ml-1.5">· {day.belum_count} belum lunas</span>
+                                    )}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <div className="text-right">
+                                    <p className={`font-bold text-base ${isToday ? 'text-indigo-300' : 'text-white'}`}>
+                                      {rp(day.net)}
+                                    </p>
+                                    {day.retur > 0 && (
+                                      <p className="text-amber-600 text-xs">retur −{rp(day.retur)}</p>
+                                    )}
+                                  </div>
+                                  <span className="text-gray-600 text-xs">{isOpen ? '▲' : '▼'}</span>
+                                </div>
+                              </div>
+                            </button>
+
+                            {/* Detail per metode bayar */}
+                            {isOpen && (
+                              <div className="border-t border-white/10 px-4 pb-4 pt-3 space-y-1">
+                                {methods.map(m => (
+                                  <div key={m.key} className="flex items-center justify-between py-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-md border ${m.bg} ${m.color}`}>
+                                        {m.label}
+                                      </span>
+                                      <span className="text-gray-600 text-xs">{m.count} nota</span>
+                                    </div>
+                                    <span className={`font-semibold text-sm ${m.color}`}>{rp(m.amount)}</span>
+                                  </div>
+                                ))}
+
+                                {/* Divider + total */}
+                                <div className="border-t border-white/10 pt-2 mt-1 space-y-1">
+                                  <div className="flex items-center justify-between text-sm">
+                                    <span className="text-gray-500 text-xs">Gross Penjualan</span>
+                                    <span className="text-gray-300 font-semibold">{rp(day.total)}</span>
+                                  </div>
+                                  {day.retur > 0 && (
+                                    <div className="flex items-center justify-between text-sm">
+                                      <span className="text-amber-600 text-xs">Retur</span>
+                                      <span className="text-amber-500 font-semibold">−{rp(day.retur)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center justify-between border-t border-white/10 pt-1.5 mt-1">
+                                    <span className="text-white text-xs font-semibold">Net Pendapatan</span>
+                                    <span className="text-white font-bold">{rp(day.net)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </>
+                  )}
+                </div>
+              )
+            })()
+
+          ) : tab === 'kas_tunai' ? (
+
+            /* ── TAB KAS TUNAI ── */
+            (() => {
+              const todayKey = (() => {
+                const n = new Date()
+                return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+              })()
+
+              const totalCash = kasTunaiData.reduce((s, d) => s + d.total, 0)
+              const totalTxn  = kasTunaiData.reduce((s, d) => s + d.count, 0)
+
+              const fmt = (iso: string) => {
+                const d = new Date(iso)
+                const jam  = String(d.getHours()).padStart(2, '0')
+                const mnt  = String(d.getMinutes()).padStart(2, '0')
+                return `${jam}:${mnt}`
+              }
+
+              const fmtDate = (key: string) => {
+                const [y, m, d] = key.split('-').map(Number)
+                const date = new Date(y, m - 1, d)
+                return date.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+              }
+
+              return (
+                <div className="space-y-3 mt-1">
+                  {loadingKasTunai ? (
+                    <p className="text-gray-500 text-center mt-12 text-sm">Memuat data...</p>
+                  ) : kasTunaiError ? (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 mt-4">
+                      <p className="text-red-400 text-sm font-semibold mb-1">Gagal memuat data kas</p>
+                      <p className="text-red-300/70 text-xs font-mono">{kasTunaiError}</p>
+                      <p className="text-gray-500 text-xs mt-2">Pastikan sudah menjalankan <code className="text-amber-400">schema_patch_paid_at.sql</code> di Supabase SQL Editor.</p>
+                    </div>
+                  ) : kasTunaiData.length === 0 ? (
+                    <p className="text-gray-600 text-center mt-12 text-sm">Belum ada penerimaan kas dalam 30 hari</p>
+                  ) : (
+                    <>
+                      {/* Summary cards */}
+                      <div className="grid grid-cols-2 gap-3 mb-1">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
+                          <p className="text-emerald-400 text-xs font-semibold uppercase tracking-wide mb-1">Total Kas 30 Hari</p>
+                          <p className="text-white font-bold text-xl">{rp(totalCash)}</p>
+                        </div>
+                        <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                          <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-1">Total Transaksi</p>
+                          <p className="text-white font-bold text-xl">{totalTxn}</p>
+                        </div>
+                      </div>
+
+                      {/* Per-day cards */}
+                      {kasTunaiData.map(day => {
+                        const isToday = day.date === todayKey
+                        const isOpen  = expandedKasTunai === day.date
+                        const invs    = kasTunaiInvoices[day.date] ?? []
+                        const loading = loadingKasTunaiDetail === day.date
+
+                        return (
+                          <div
+                            key={day.date}
+                            className={`rounded-2xl border overflow-hidden ${isToday ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-white/10 bg-white/5'}`}
+                          >
+                            <button
+                              className="w-full text-left p-4"
+                              onClick={async () => {
+                                if (!isOpen) await loadKasTunaiDetail(day.date)
+                                setExpandedKasTunai(isOpen ? null : day.date)
+                              }}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className={`font-semibold text-sm ${isToday ? 'text-emerald-400' : 'text-white'}`}>
+                                    {isToday ? 'Hari Ini' : fmtDate(day.date)}
+                                    {isToday && <span className="text-gray-400 font-normal ml-1">— {fmtDate(day.date)}</span>}
+                                  </p>
+                                  <div className="flex gap-3 mt-0.5 flex-wrap">
+                                    {day.tunai_count > 0    && <p className="text-green-400 text-xs">{day.tunai_count}× tunai</p>}
+                                    {day.transfer_count > 0 && <p className="text-blue-400 text-xs">{day.transfer_count}× transfer</p>}
+                                    {day.hutang_count > 0   && <p className="text-amber-400 text-xs">{day.hutang_count}× bayar hutang</p>}
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="text-white font-bold">{rp(day.total)}</p>
+                                  <p className="text-gray-500 text-xs">{isOpen ? '▲' : '▼'}</p>
+                                </div>
+                              </div>
+                            </button>
+
+                            {isOpen && (
+                              <div className="border-t border-white/10 bg-black/20 px-4 py-3 space-y-2">
+                                {loading ? (
+                                  <p className="text-gray-500 text-xs text-center py-3">Memuat...</p>
+                                ) : invs.length === 0 ? (
+                                  <p className="text-gray-600 text-xs text-center py-3">Tidak ada data</p>
+                                ) : (
+                                  invs.map((inv, i) => {
+                                    const isTransfer = inv.pay_method === 'transfer'
+                                    return (
+                                      <div key={`${inv.is_retur ? 'r' : 's'}-${inv.id}-${i}`} className={`flex items-center gap-3 py-2 border-b border-white/5 last:border-0 ${inv.is_retur ? 'opacity-80' : ''}`}>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <p className={`text-xs font-semibold font-mono ${inv.is_retur ? 'text-red-400' : 'text-white'}`}>{inv.code}</p>
+                                            {inv.is_retur && (
+                                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-400 shrink-0">
+                                                RETUR
+                                              </span>
+                                            )}
+                                            {!inv.is_retur && isTransfer && (
+                                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-400 shrink-0">
+                                                TRANSFER
+                                              </span>
+                                            )}
+                                            {inv.is_retur && isTransfer && (
+                                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-400 shrink-0">
+                                                TRANSFER
+                                              </span>
+                                            )}
+                                            {inv.is_hutang && (
+                                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 shrink-0">
+                                                BAYAR HUTANG
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-gray-500 text-xs">
+                                            {inv.customer_name ?? 'Umum'} · {fmt(inv.paid_at)}
+                                          </p>
+                                        </div>
+                                        <p className={`text-sm font-semibold shrink-0 ${inv.is_retur ? 'text-red-400' : 'text-white'}`}>
+                                          {inv.is_retur ? `−${rp(-inv.total)}` : rp(inv.total)}
+                                        </p>
+                                      </div>
+                                    )
+                                  })
+                                )}
+                                {/* Footer breakdown */}
+                                <div className="border-t border-white/10 pt-2 mt-1 space-y-1">
+                                  {day.tunai_total > 0 && (
+                                    <div className="flex justify-between items-center">
+                                      <p className="text-green-400 text-xs">Tunai ({day.tunai_count}×)</p>
+                                      <p className="text-green-400 text-xs font-semibold">{rp(day.tunai_total)}</p>
+                                    </div>
+                                  )}
+                                  {day.transfer_total > 0 && (
+                                    <div className="flex justify-between items-center">
+                                      <p className="text-blue-400 text-xs">Transfer ({day.transfer_count}×)</p>
+                                      <p className="text-blue-400 text-xs font-semibold">{rp(day.transfer_total)}</p>
+                                    </div>
+                                  )}
+                                  {day.hutang_total > 0 && (
+                                    <div className="flex justify-between items-center">
+                                      <p className="text-amber-400 text-xs">Bayar Hutang ({day.hutang_count}×)</p>
+                                      <p className="text-amber-400 text-xs font-semibold">{rp(day.hutang_total)}</p>
+                                    </div>
+                                  )}
+                                  {(day.retur_tunai > 0 || day.retur_transfer > 0) && (
+                                    <div className="flex justify-between items-center">
+                                      <p className="text-red-400 text-xs">Retur Keluar</p>
+                                      <p className="text-red-400 text-xs font-semibold">−{rp(day.retur_tunai + day.retur_transfer)}</p>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between items-center border-t border-white/10 pt-1.5">
+                                    <p className="text-gray-400 text-xs font-semibold">Net Kas</p>
+                                    <p className="text-white font-bold text-sm">{rp(day.total)}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </>
+                  )}
+                </div>
+              )
+            })()
+
           ) : (
 
             /* ── TAB KASIR ── */

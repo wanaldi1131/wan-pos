@@ -119,6 +119,7 @@ export default function HistoryPage() {
 
   const [expandedId, setExpandedId]     = useState<number | null>(null)
   const [itemsCache, setItemsCache]     = useState<Record<number, SaleItem[]>>({})
+  const [returnsCache, setReturnsCache] = useState<Record<number, number>>({})
   const [loadingItems, setLoadingItems] = useState(false)
 
   // ── Retur state ───────────────────────────────────────────────
@@ -130,6 +131,7 @@ export default function HistoryPage() {
   const [loadingReturn, setLoadingReturn]     = useState(false)
   const [submittingReturn, setSubmittingReturn] = useState(false)
   const [returnSuccess, setReturnSuccess]     = useState<string | null>(null)
+  const [returnError, setReturnError]         = useState<string | null>(null)
 
   // ── Auth ──────────────────────────────────────────────────────
 
@@ -241,10 +243,18 @@ export default function HistoryPage() {
     setLoadingItems(true)
     const sb = createClient()
 
-    const { data: items } = await sb
-      .from('sale_items')
-      .select('id, product_id, unit_id, qty, unit_price, subtotal')
-      .eq('sale_id', saleId)
+    const [{ data: items }, { data: saleReturns }] = await Promise.all([
+      sb.from('sale_items')
+        .select('id, product_id, unit_id, qty, unit_price, subtotal')
+        .eq('sale_id', saleId),
+      sb.from('sale_returns')
+        .select('total')
+        .eq('sale_id', saleId),
+    ])
+
+    // Simpan total diretur
+    const totalReturned = (saleReturns ?? []).reduce((s, r) => s + Number(r.total), 0)
+    setReturnsCache(c => ({ ...c, [saleId]: totalReturned }))
 
     if (!items || items.length === 0) {
       setItemsCache(c => ({ ...c, [saleId]: [] }))
@@ -285,6 +295,7 @@ export default function HistoryPage() {
     setReturnQtys({})
     setReturnNote('')
     setReturnRefundMethod('tunai')
+    setReturnError(null)
   }
 
   async function startRetur(saleId: number) {
@@ -336,67 +347,46 @@ export default function HistoryPage() {
     const toReturn = returnableItems.filter(i => (returnQtys[i.sale_item_id] ?? 0) > 0)
     if (toReturn.length === 0 || !user) return
 
-    setSubmittingReturn(true)
-    const sb    = createClient()
-    const total = toReturn.reduce((s, i) => s + (returnQtys[i.sale_item_id]! * i.unit_price), 0)
-
-    // 1. Buat sale_return
-    const { data: ret, error } = await sb
-      .from('sale_returns')
-      .insert({
-        sale_id:       saleId,
-        cashier_id:    user.id,
-        note:          returnNote || null,
-        total,
-        refund_method: returnRefundMethod,
-      })
-      .select('id')
-      .single()
-
-    if (error || !ret) {
-      console.error('Gagal retur:', error?.message)
-      setSubmittingReturn(false)
+    // Validasi client-side sebelum kirim ke server
+    const overLimit = toReturn.find(i => {
+      const qty = returnQtys[i.sale_item_id] ?? 0
+      return qty > i.max_qty
+    })
+    if (overLimit) {
+      setReturnError(`Qty retur "${overLimit.product_name}" melebihi batas (maks ${overLimit.max_qty} ${overLimit.unit_name})`)
       return
     }
 
-    // 2. Insert return_items
-    await sb.from('return_items').insert(
-      toReturn.map(i => {
-        const qty = returnQtys[i.sale_item_id]!
-        return {
-          return_id:    ret.id,
-          sale_item_id: i.sale_item_id,
-          qty,
-          base_qty:     qty * i.factor_to_base,
-          unit_price:   i.unit_price,
-          subtotal:     qty * i.unit_price,
-        }
-      })
-    )
+    setSubmittingReturn(true)
+    setReturnError(null)
 
-    // 3. Stock movement positif — barang kembali ke gudang
-    await sb.from('stock_movements').insert(
-      toReturn.map(i => {
-        const qty = returnQtys[i.sale_item_id]!
-        return {
-          product_id:   i.product_id,
-          warehouse_id: 1,
-          base_qty:     qty * i.factor_to_base,   // positif = masuk gudang
-          type:         'sale_return',
-          ref_table:    'sale_returns',
-          ref_id:       ret.id,
-          created_by:   user.id,
-        }
-      })
-    )
+    const { data, error } = await createClient().rpc('confirm_return', {
+      p_sale_id:       saleId,
+      p_cashier_id:    user.id,
+      p_refund_method: returnRefundMethod,
+      p_note:          returnNote || null,
+      p_items:         toReturn.map(i => ({
+        sale_item_id: i.sale_item_id,
+        qty:          returnQtys[i.sale_item_id]!,
+      })),
+    })
 
-    cancelRetur()
     setSubmittingReturn(false)
+
+    if (error || !data) {
+      // Pesan error dari server (misal: qty melebihi sisa retur)
+      const msg = error?.message ?? 'Gagal menyimpan retur'
+      setReturnError(msg.includes('Qty retur') ? msg : 'Gagal menyimpan retur. Coba lagi.')
+      return
+    }
+
+    const total = Number((data as { total: number }).total)
+    cancelRetur()
     setReturnSuccess(`Retur ${rp(total)} berhasil dicatat`)
     setTimeout(() => setReturnSuccess(null), 4000)
-
-    // Invalidate cache item (mungkin qty retur sudah berubah)
+    // Invalidate cache agar data retur fresh saat dibuka lagi
     setItemsCache(c => { const copy = { ...c }; delete copy[saleId]; return copy })
+    setReturnsCache(c => { const copy = { ...c }; delete copy[saleId]; return copy })
   }
 
   // ── Render guard ──────────────────────────────────────────────
@@ -557,6 +547,14 @@ export default function HistoryPage() {
                           </div>
                         )}
 
+                        {/* Error banner */}
+                        {returnError && isRetur && (
+                          <div className="mt-3 px-4 py-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-sm flex items-start justify-between gap-2">
+                            <span>{returnError}</span>
+                            <button onClick={() => setReturnError(null)} className="shrink-0 opacity-60 hover:opacity-100 text-xs mt-0.5">✕</button>
+                          </div>
+                        )}
+
                         {loadingItems && !items ? (
                           <p className="text-gray-500 text-xs text-center py-3">Memuat item...</p>
                         ) : !items || items.length === 0 ? (
@@ -613,10 +611,7 @@ export default function HistoryPage() {
                                             placeholder="0"
                                             onChange={e => {
                                               const v = parseFloat(e.target.value)
-                                              setReturnQtys(prev => ({
-                                                ...prev,
-                                                [item.sale_item_id]: isNaN(v) ? 0 : Math.min(v, item.max_qty),
-                                              }))
+                                              setQty(isNaN(v) ? 0 : v)
                                             }}
                                             onFocus={e => e.target.select()}
                                             className="w-16 text-white text-sm text-center bg-white/10 border border-white/15 focus:border-amber-500 rounded-lg h-7 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -712,6 +707,18 @@ export default function HistoryPage() {
                                   <td colSpan={3} className="pt-3 text-gray-500 text-xs">Total</td>
                                   <td className="pt-3 text-white font-bold text-right">{rp(sale.total)}</td>
                                 </tr>
+                                {(returnsCache[sale.id] ?? 0) > 0 && (
+                                  <tr>
+                                    <td colSpan={3} className="pt-1.5 text-amber-600 text-xs">Diretur</td>
+                                    <td className="pt-1.5 text-amber-500 font-semibold text-right">−{rp(returnsCache[sale.id])}</td>
+                                  </tr>
+                                )}
+                                {(returnsCache[sale.id] ?? 0) > 0 && (
+                                  <tr>
+                                    <td colSpan={3} className="pt-1 text-gray-500 text-xs">Sisa Efektif</td>
+                                    <td className="pt-1 text-gray-300 font-semibold text-right">{rp(sale.total - returnsCache[sale.id])}</td>
+                                  </tr>
+                                )}
                               </tfoot>
                             </table>
 

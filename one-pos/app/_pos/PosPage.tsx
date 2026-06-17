@@ -259,7 +259,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
     ))
   }
 
-  // ── Confirm sale ──────────────────────────────────────────────────────────
+  // ── Confirm sale (atomik via RPC — harga dibaca server-side) ─────────────
 
   async function confirmSale() {
     if (cart.length === 0) return
@@ -269,55 +269,23 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
     }
     setCheckoutErr(null)
     setSubmitting(true)
-    const sb = createClient()
 
-    const { data: sale, error: saleErr } = await sb
-      .from('sales')
-      .insert({
-        cashier_id:  user.id,
-        customer_id: customer?.id ?? null,
-        warehouse_id: 1,
-        fulfillment,
-        pay_method:  payMethod,
-        pay_status:  payMethod === 'tunai' || payMethod === 'transfer' ? 'lunas' : 'belum',
-        total:       cartTotal,
-      })
-      .select('id, code')
-      .single()
+    const { data, error } = await createClient().rpc('checkout_sale', {
+      p_cashier_id:   user.id,
+      p_customer_id:  customer?.id ?? null,
+      p_warehouse_id: 1,
+      p_fulfillment:  fulfillment,
+      p_pay_method:   payMethod,
+      p_items:        cart.map(i => ({ unit_id: i.unit.id, qty: i.qty })),
+    })
 
-    if (saleErr || !sale) {
+    if (error || !data) {
       setCheckoutErr('Gagal menyimpan transaksi. Coba lagi.')
       setSubmitting(false)
       return
     }
 
-    await sb.from('sale_items').insert(
-      cart.map(i => ({
-        sale_id:    sale.id,
-        product_id: i.product.id,
-        unit_id:    i.unit.id,
-        qty:        i.qty,
-        base_qty:   i.qty * i.unit.factor_to_base,
-        unit_price: i.unit_price,
-        subtotal:   i.subtotal,
-      }))
-    )
-
-    if (fulfillment === 'ambil') {
-      await sb.from('stock_movements').insert(
-        cart.map(i => ({
-          product_id:   i.product.id,
-          warehouse_id: 1,
-          base_qty:     -(i.qty * i.unit.factor_to_base),
-          type:         'sale',
-          ref_table:    'sales',
-          ref_id:       sale.id,
-          created_by:   user.id,
-        }))
-      )
-    }
-
-    setLastNota(sale.code)
+    setLastNota((data as { code: string }).code)
     setCart([])
     setCustomer(null)
     setCustQuery('')

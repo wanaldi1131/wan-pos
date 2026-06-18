@@ -7,6 +7,8 @@ import type { User } from '@supabase/supabase-js'
 // ── Types ──────────────────────────────────────────────────────
 type Driver = { id: number; name: string }
 
+type SuratJalanLine = { sale_item_id: number; base_qty: number }
+
 type SuratJalanRec = {
   id: number
   code: string
@@ -14,6 +16,7 @@ type SuratJalanRec = {
   plat: string | null
   created_at: string
   driver: { name: string } | null
+  surat_jalan_lines: SuratJalanLine[]
 }
 
 type Customer = {
@@ -32,6 +35,7 @@ type SaleAntar = {
   created_at: string
   customer: Customer | null
   surat_jalan: SuratJalanRec[]
+  sale_items: { id: number; base_qty: number }[]
 }
 
 type SaleBelumLunas = {
@@ -119,10 +123,30 @@ const PAY_LABEL: Record<string, string> = {
   tunai: 'Tunai', transfer: 'Transfer', cod: 'COD', kredit: 'Kredit',
 }
 
-function deliveryStatus(sjs: SuratJalanRec[]): 'none' | 'dimuat' | 'terkirim' {
-  if (sjs.length === 0) return 'none'
-  if (sjs.some(s => s.status === 'terkirim')) return 'terkirim'
-  return 'dimuat'
+function hasPendingDispatch(sale: SaleAntar): boolean {
+  const totalBase      = sale.sale_items.reduce((s, i) => s + Number(i.base_qty), 0)
+  const dispatchedBase = sale.surat_jalan
+    .flatMap(sj => sj.surat_jalan_lines ?? [])
+    .reduce((s, l) => s + Number(l.base_qty), 0)
+  return dispatchedBase < totalBase || sale.surat_jalan.some(sj => sj.status === 'dimuat')
+}
+
+function getItemDispatch(item: SaleItem, sjs: SuratJalanRec[]) {
+  const factor         = item.base_qty / item.qty
+  let dispatchedBase   = 0
+  let deliveredBase    = 0
+  for (const sj of sjs) {
+    for (const line of sj.surat_jalan_lines ?? []) {
+      if (line.sale_item_id === item.id) {
+        dispatchedBase += Number(line.base_qty)
+        if (sj.status === 'terkirim') deliveredBase += Number(line.base_qty)
+      }
+    }
+  }
+  const dispatched = factor > 0 ? dispatchedBase / factor : 0
+  const delivered  = factor > 0 ? deliveredBase  / factor : 0
+  const pending    = item.qty - dispatched
+  return { dispatched, delivered, pending }
 }
 
 // ── Print surat jalan ──────────────────────────────────────────
@@ -130,8 +154,18 @@ function printSJ(
   sj: SuratJalanRec,
   sale: Pick<SaleAntar, 'code' | 'pay_method' | 'total'>,
   customer: Customer | null,
-  items: SaleItem[],
+  allItems: SaleItem[],
 ) {
+  const sjLines = sj.surat_jalan_lines ?? []
+  const items = allItems
+    .filter(item => sjLines.some(l => l.sale_item_id === item.id))
+    .map(item => {
+      const line   = sjLines.find(l => l.sale_item_id === item.id)!
+      const factor = item.base_qty > 0 ? item.base_qty / item.qty : 1
+      const sjQty  = Number(line.base_qty) / factor
+      return { ...item, qty: sjQty }
+    })
+
   const rows = items.map((item, i) => `
     <tr>
       <td style="text-align:center;width:5%">${i + 1}</td>
@@ -227,9 +261,10 @@ export default function AdminPage() {
   const [loadingItems, setLoadingItems] = useState(false)
 
   // Buat SJ form
-  const [makingSjId, setMakingSjId] = useState<number | null>(null)
-  const [sjDriverId, setSjDriverId] = useState('')
-  const [sjPlat, setSjPlat]         = useState('')
+  const [makingSjId, setMakingSjId]   = useState<number | null>(null)
+  const [sjDriverId, setSjDriverId]   = useState('')
+  const [sjPlat, setSjPlat]           = useState('')
+  const [sjItemQtys, setSjItemQtys]   = useState<Record<number, number>>({})
   const [submittingSj, setSubmittingSj] = useState(false)
 
   // Action spinners
@@ -321,7 +356,8 @@ export default function AdminPage() {
       .select(`
         id, code, total, pay_method, pay_status, created_at,
         customer:customers(id, name, phone, address),
-        surat_jalan(id, code, status, plat, created_at, driver:drivers(name))
+        surat_jalan(id, code, status, plat, created_at, driver:drivers(name), surat_jalan_lines(sale_item_id, base_qty)),
+        sale_items(id, base_qty)
       `)
       .eq('fulfillment', 'antar')
       .eq('voided', false)
@@ -552,33 +588,39 @@ export default function AdminPage() {
   }
 
   // ── Buat surat jalan ────────────────────────────────────────
-  async function createSuratJalan(saleId: number) {
-    const items = itemsCache[saleId]
+  async function createSuratJalan(sale: SaleAntar) {
+    const items = itemsCache[sale.id]
     if (!items || items.length === 0 || !user) return
     setSubmittingSj(true); setError(null)
 
-    const { data: sj, error: err } = await sb
-      .from('surat_jalan')
-      .insert({
-        sale_id:    saleId,
-        driver_id:  sjDriverId ? parseInt(sjDriverId) : null,
-        plat:       sjPlat.trim() || null,
-        created_by: user.id,
+    const sjItems = items
+      .map(item => {
+        const { pending } = getItemDispatch(item, sale.surat_jalan)
+        const enteredQty  = sjItemQtys[item.id] ?? pending
+        if (enteredQty <= 0) return null
+        const factor    = item.base_qty > 0 ? item.base_qty / item.qty : 1
+        const baseQty   = enteredQty * factor
+        return { sale_item_id: item.id, base_qty: baseQty }
       })
-      .select()
-      .single()
+      .filter(Boolean)
 
-    if (err || !sj) { setError(err?.message ?? 'Gagal buat surat jalan'); setSubmittingSj(false); return }
+    if (sjItems.length === 0) {
+      setError('Tidak ada item yang dipilih')
+      setSubmittingSj(false)
+      return
+    }
 
-    await sb.from('surat_jalan_lines').insert(
-      items.map(item => ({
-        surat_jalan_id: sj.id,
-        sale_item_id:   item.id,
-        base_qty:       item.base_qty,
-      }))
-    )
+    const { error: err } = await sb.rpc('create_surat_jalan', {
+      p_sale_id:    sale.id,
+      p_driver_id:  sjDriverId ? parseInt(sjDriverId) : null,
+      p_plat:       sjPlat.trim() || null,
+      p_created_by: user.id,
+      p_items:      sjItems,
+    })
 
-    setMakingSjId(null); setSjDriverId(''); setSjPlat('')
+    if (err) { setError(err.message); setSubmittingSj(false); return }
+
+    setMakingSjId(null); setSjDriverId(''); setSjPlat(''); setSjItemQtys({})
     setSubmittingSj(false)
     loadAntaran()
   }
@@ -617,7 +659,7 @@ export default function AdminPage() {
   }
 
   const isAdmin             = userRole === 'admin' || userRole === 'owner'
-  const displayedPengiriman = antaRanSales.filter(s => deliveryStatus(s.surat_jalan) !== 'terkirim')
+  const displayedPengiriman = antaRanSales.filter(s => hasPendingDispatch(s))
   const pendingAntaran      = displayedPengiriman.length
   const totalBelumLunas     = belumLunasSales.length
 
@@ -706,11 +748,15 @@ export default function AdminPage() {
                 </p>
               ) : (
                 filteredPengiriman.map(sale => {
-                const djStatus   = deliveryStatus(sale.surat_jalan)
-                const activeSj   = sale.surat_jalan.find(s => s.status === 'dimuat') ?? sale.surat_jalan[0] ?? null
                 const isExpanded = expandedId === sale.id
                 const isMakingSj = makingSjId === sale.id
                 const items      = itemsCache[sale.id]
+                const anyDispatched = items
+                  ? items.some(it => getItemDispatch(it, sale.surat_jalan).dispatched > 0)
+                  : false
+                const anyPending = items
+                  ? items.some(it => getItemDispatch(it, sale.surat_jalan).pending > 0)
+                  : hasPendingDispatch(sale)
 
                 return (
                   <div
@@ -730,15 +776,17 @@ export default function AdminPage() {
                           <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                             <span className="text-white font-mono text-sm font-bold">{sale.code}</span>
 
-                            <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
-                              djStatus === 'terkirim'
-                                ? 'bg-green-500/20 text-green-400'
-                                : djStatus === 'dimuat'
-                                  ? 'bg-blue-500/20 text-blue-400'
-                                  : 'bg-white/10 text-gray-500'
-                            }`}>
-                              {djStatus === 'terkirim' ? 'Terkirim' : djStatus === 'dimuat' ? 'Dimuat' : 'Belum SJ'}
-                            </span>
+                            {sale.surat_jalan.length === 0 ? (
+                              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-white/10 text-gray-500">Belum SJ</span>
+                            ) : sale.surat_jalan.some(sj => sj.status === 'dimuat') ? (
+                              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-400">
+                                Dimuat{sale.surat_jalan.length > 1 ? ` (${sale.surat_jalan.length} SJ)` : ''}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-green-500/20 text-green-400">
+                                Terkirim{anyPending ? ' (Sebagian)' : ''}
+                              </span>
+                            )}
 
                             <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
                               sale.pay_status === 'lunas'
@@ -786,49 +834,126 @@ export default function AdminPage() {
                               <tr className="text-gray-600 text-xs uppercase tracking-wide">
                                 <th className="text-left pb-2 font-medium">Produk</th>
                                 <th className="text-right pb-2 font-medium">Qty</th>
+                                {anyDispatched && <th className="text-right pb-2 font-medium">Dikirim</th>}
+                                {anyDispatched && <th className="text-right pb-2 font-medium text-amber-500">Sisa</th>}
                                 <th className="text-right pb-2 font-medium">Subtotal</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                              {items.map(item => (
-                                <tr key={item.id}>
-                                  <td className="py-2 text-white pr-3">{item.product?.name ?? '—'}</td>
-                                  <td className="py-2 text-gray-400 text-right whitespace-nowrap">
-                                    {fmtQty(item.qty)} {item.unit?.unit_name ?? ''}
-                                  </td>
-                                  <td className="py-2 text-indigo-300 font-semibold text-right whitespace-nowrap">
-                                    {rp(item.subtotal)}
-                                  </td>
-                                </tr>
-                              ))}
+                              {items.map(item => {
+                                const { dispatched, pending } = getItemDispatch(item, sale.surat_jalan)
+                                const unitName = item.unit?.unit_name ?? ''
+                                return (
+                                  <tr key={item.id}>
+                                    <td className="py-2 text-white pr-3">{item.product?.name ?? '—'}</td>
+                                    <td className="py-2 text-gray-400 text-right whitespace-nowrap">
+                                      {fmtQty(item.qty)} {unitName}
+                                    </td>
+                                    {anyDispatched && (
+                                      <td className="py-2 text-blue-400 text-right whitespace-nowrap">
+                                        {dispatched > 0 ? `${fmtQty(dispatched)} ${unitName}` : '—'}
+                                      </td>
+                                    )}
+                                    {anyDispatched && (
+                                      <td className={`py-2 text-right whitespace-nowrap font-semibold ${pending > 0 ? 'text-amber-400' : 'text-gray-600'}`}>
+                                        {pending > 0 ? `${fmtQty(pending)} ${unitName}` : '✓'}
+                                      </td>
+                                    )}
+                                    <td className="py-2 text-indigo-300 font-semibold text-right whitespace-nowrap">
+                                      {rp(item.subtotal)}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
                             </tbody>
                             <tfoot>
                               <tr className="border-t border-white/10">
-                                <td colSpan={2} className="pt-2 text-gray-600 text-xs">Total</td>
+                                <td colSpan={anyDispatched ? 4 : 2} className="pt-2 text-gray-600 text-xs">Total</td>
                                 <td className="pt-2 text-white font-bold text-right">{rp(sale.total)}</td>
                               </tr>
                             </tfoot>
                           </table>
                         ) : null}
 
-                        {/* SJ info strip */}
-                        {activeSj && (
-                          <div className="px-3 py-2 bg-white/5 rounded-xl text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-                            <span className="text-white font-mono font-semibold">{activeSj.code}</span>
-                            {activeSj.driver?.name && <span>· {activeSj.driver.name}</span>}
-                            {activeSj.plat && <span className="text-gray-300 font-medium">· {activeSj.plat}</span>}
-                            <span className="text-gray-700">· {fmtDateTime(activeSj.created_at)}</span>
+                        {/* List semua Surat Jalan */}
+                        {sale.surat_jalan.length > 0 && (
+                          <div className="space-y-2 mt-1">
+                            <p className="text-gray-600 text-xs uppercase tracking-wide font-semibold">Surat Jalan</p>
+                            {sale.surat_jalan
+                              .slice()
+                              .sort((a, b) => a.created_at.localeCompare(b.created_at))
+                              .map(sj => (
+                                <div key={sj.id} className={`px-3 py-2 rounded-xl text-xs flex items-center gap-2 flex-wrap ${
+                                  sj.status === 'terkirim' ? 'bg-green-500/8 border border-green-500/20' : 'bg-white/5 border border-white/10'
+                                }`}>
+                                  <span className={`font-mono font-semibold ${sj.status === 'terkirim' ? 'text-green-400' : 'text-white'}`}>{sj.code}</span>
+                                  {sj.driver?.name && <span className="text-gray-500">· {sj.driver.name}</span>}
+                                  {sj.plat && <span className="text-gray-300 font-medium">· {sj.plat}</span>}
+                                  <span className="text-gray-700">· {fmtDateTime(sj.created_at)}</span>
+                                  <span className={`ml-auto text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
+                                    sj.status === 'terkirim' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
+                                  }`}>{sj.status === 'terkirim' ? 'Terkirim' : 'Dimuat'}</span>
+                                  {items && items.length > 0 && (
+                                    <button
+                                      onClick={() => printSJ(sj, sale, sale.customer, items)}
+                                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white/8 text-gray-400 hover:bg-white/15 transition-colors"
+                                    >
+                                      🖨 Cetak
+                                    </button>
+                                  )}
+                                  {isAdmin && sj.status === 'dimuat' && (
+                                    <button
+                                      onClick={() => markTerkirim(sj.id)}
+                                      disabled={updatingSjId === sj.id}
+                                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors disabled:opacity-40"
+                                    >
+                                      {updatingSjId === sj.id ? '...' : '✓ Terkirim'}
+                                    </button>
+                                  )}
+                                </div>
+                              ))
+                            }
                           </div>
                         )}
 
-                        {/* Buat SJ inline form */}
-                        {isMakingSj && (
-                          <div className="border border-indigo-500/30 rounded-xl p-3 bg-indigo-500/5 space-y-2">
-                            <p className="text-indigo-400 text-xs font-semibold uppercase tracking-wide">Buat Surat Jalan</p>
+                        {/* Form buat surat jalan baru */}
+                        {isMakingSj && items && (
+                          <div className="border border-indigo-500/30 rounded-xl p-3 bg-indigo-500/5 space-y-2.5">
+                            <p className="text-indigo-400 text-xs font-semibold uppercase tracking-wide">Buat Surat Jalan Baru</p>
+
+                            {/* Pilih item + qty */}
+                            <div className="space-y-1.5">
+                              {items.map(item => {
+                                const { pending } = getItemDispatch(item, sale.surat_jalan)
+                                if (pending <= 0) return null
+                                const unitName   = item.unit?.unit_name ?? ''
+                                const currentQty = sjItemQtys[item.id] ?? pending
+                                return (
+                                  <div key={item.id} className="flex items-center gap-2">
+                                    <span className="text-white text-xs flex-1 min-w-0 truncate">{item.product?.name ?? '—'}</span>
+                                    <span className="text-gray-600 text-xs shrink-0">max {fmtQty(pending)}</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={pending}
+                                      step="any"
+                                      value={currentQty}
+                                      onChange={e => {
+                                        const v = Math.max(0, Math.min(Number(e.target.value), pending))
+                                        setSjItemQtys(prev => ({ ...prev, [item.id]: v }))
+                                      }}
+                                      className="w-20 bg-white/8 border border-white/10 text-white rounded-lg px-2 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-gray-500 text-xs shrink-0 w-8">{unitName}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+
                             <select
                               value={sjDriverId}
                               onChange={e => setSjDriverId(e.target.value)}
-                              className="w-full bg-white/8 border border-white/10 text-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                              className="w-full bg-white/8 border border-white/10 text-white rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                             >
                               <option value="">— Pengemudi (opsional) —</option>
                               {drivers.map(d => (
@@ -840,18 +965,18 @@ export default function AdminPage() {
                               value={sjPlat}
                               onChange={e => setSjPlat(e.target.value)}
                               placeholder="Plat kendaraan (cth: B 1234 XX)"
-                              className="w-full bg-white/8 border border-white/10 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                              className="w-full bg-white/8 border border-white/10 text-white placeholder-gray-600 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                             <div className="flex gap-2 pt-1">
                               <button
-                                onClick={() => setMakingSjId(null)}
+                                onClick={() => { setMakingSjId(null); setSjItemQtys({}) }}
                                 className="flex-1 py-2 rounded-xl bg-white/5 text-gray-400 text-sm hover:bg-white/10 transition-colors"
                               >
                                 Batal
                               </button>
                               <button
-                                onClick={() => createSuratJalan(sale.id)}
-                                disabled={submittingSj || !items || items.length === 0}
+                                onClick={() => createSuratJalan(sale)}
+                                disabled={submittingSj}
                                 className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors disabled:opacity-40"
                               >
                                 {submittingSj ? 'Membuat...' : 'Buat SJ →'}
@@ -863,7 +988,7 @@ export default function AdminPage() {
                         {/* Action buttons */}
                         <div className="flex flex-wrap gap-2 pt-1">
 
-                          {/* Toggle pay status — admin/owner only */}
+                          {/* Toggle pay status */}
                           {isAdmin && (
                             <button
                               onClick={() => togglePayStatus(sale.id, sale.pay_status)}
@@ -879,34 +1004,24 @@ export default function AdminPage() {
                             </button>
                           )}
 
-                          {/* Buat SJ — admin/owner only */}
-                          {isAdmin && djStatus === 'none' && !isMakingSj && (
+                          {/* Buat SJ baru — tampil kalau masih ada item pending */}
+                          {isAdmin && anyPending && !isMakingSj && (
                             <button
-                              onClick={() => { setMakingSjId(sale.id); setSjDriverId(''); setSjPlat('') }}
+                              onClick={() => {
+                                if (!items) return
+                                const initQtys: Record<number, number> = {}
+                                for (const it of items) {
+                                  const { pending } = getItemDispatch(it, sale.surat_jalan)
+                                  if (pending > 0) initQtys[it.id] = pending
+                                }
+                                setSjItemQtys(initQtys)
+                                setMakingSjId(sale.id)
+                                setSjDriverId('')
+                                setSjPlat('')
+                              }}
                               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 transition-colors"
                             >
-                              + Buat Surat Jalan
-                            </button>
-                          )}
-
-                          {/* Tandai terkirim — admin/owner only */}
-                          {isAdmin && djStatus === 'dimuat' && activeSj && (
-                            <button
-                              onClick={() => markTerkirim(activeSj.id)}
-                              disabled={updatingSjId === activeSj.id}
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500/20 transition-colors disabled:opacity-40"
-                            >
-                              {updatingSjId === activeSj.id ? '...' : '✓ Tandai Terkirim'}
-                            </button>
-                          )}
-
-                          {/* Cetak SJ — semua role bisa cetak */}
-                          {activeSj && items && items.length > 0 && (
-                            <button
-                              onClick={() => printSJ(activeSj, sale, sale.customer, items)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/8 text-gray-300 border border-white/15 hover:bg-white/15 transition-colors"
-                            >
-                              🖨 Cetak SJ
+                              + Buat Surat Jalan{sale.surat_jalan.length > 0 ? ' Baru' : ''}
                             </button>
                           )}
                         </div>

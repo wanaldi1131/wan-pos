@@ -922,29 +922,48 @@ export default function AdminPage() {
                             <p className="text-indigo-400 text-xs font-semibold uppercase tracking-wide">Buat Surat Jalan Baru</p>
 
                             {/* Pilih item + qty */}
-                            <div className="space-y-1.5">
+                            <div className="divide-y divide-white/5">
                               {items.map(item => {
                                 const { pending } = getItemDispatch(item, sale.surat_jalan)
                                 if (pending <= 0) return null
                                 const unitName   = item.unit?.unit_name ?? ''
                                 const currentQty = sjItemQtys[item.id] ?? pending
+                                const setQty = (v: number) => setSjItemQtys(prev => ({
+                                  ...prev,
+                                  [item.id]: Math.max(0, Math.min(v, pending)),
+                                }))
                                 return (
-                                  <div key={item.id} className="flex items-center gap-2">
-                                    <span className="text-white text-xs flex-1 min-w-0 truncate">{item.product?.name ?? '—'}</span>
-                                    <span className="text-gray-600 text-xs shrink-0">max {fmtQty(pending)}</span>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      max={pending}
-                                      step="any"
-                                      value={currentQty}
-                                      onChange={e => {
-                                        const v = Math.max(0, Math.min(Number(e.target.value), pending))
-                                        setSjItemQtys(prev => ({ ...prev, [item.id]: v }))
-                                      }}
-                                      className="w-20 bg-white/8 border border-white/10 text-white rounded-lg px-2 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500"
-                                    />
-                                    <span className="text-gray-500 text-xs shrink-0 w-8">{unitName}</span>
+                                  <div key={item.id} className="py-3 flex items-center gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-sm font-medium truncate">{item.product?.name ?? '—'}</p>
+                                      <p className="text-gray-500 text-xs mt-0.5">sisa {fmtQty(pending)} {unitName}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        onClick={() => setQty(currentQty - 1)}
+                                        className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm flex items-center justify-center"
+                                      >−</button>
+                                      <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        min={0}
+                                        max={pending}
+                                        step="any"
+                                        value={currentQty === 0 ? '' : currentQty}
+                                        placeholder="0"
+                                        onChange={e => {
+                                          const v = parseFloat(e.target.value)
+                                          setQty(isNaN(v) ? 0 : v)
+                                        }}
+                                        onFocus={e => e.target.select()}
+                                        className="w-16 text-white text-sm text-center bg-white/10 border border-white/15 focus:border-indigo-500 rounded-lg h-7 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                      />
+                                      <button
+                                        onClick={() => setQty(currentQty + 1)}
+                                        className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm flex items-center justify-center"
+                                      >+</button>
+                                      <span className="text-gray-600 text-xs w-10 text-right">{unitName}</span>
+                                    </div>
                                   </div>
                                 )
                               })}

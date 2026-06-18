@@ -1,22 +1,32 @@
 -- ================================================================
---  Patch: Reserved Stock + Partial Surat Jalan
+--  Patch: Reserved Stock + Partial Surat Jalan  [BAGIAN 1 dari 2]
 --
 --  Masalah yang ditutup:
 --   1. Penjualan "antar" tidak memotong stok → overselling mungkin terjadi
 --   2. Surat jalan harus mencakup semua item sekaligus
 --
---  Jalankan SEKALI di Supabase SQL Editor, SETELAH:
+--  URUTAN WAJIB — jalankan dua file ini secara terpisah di SQL Editor:
+--   1. File ini (schema_patch_reserved_stock.sql)        ← jalankan dulu
+--   2. schema_patch_reserved_stock_backfill.sql          ← jalankan setelah file ini selesai
+--
+--  Prasyarat sebelum file ini:
 --    - schema_patch_atomic_ops.sql
 --    - schema_patch_paid_at.sql
 --
---  Urutan eksekusi dalam file ini:
+--  Kenapa dua file?
+--   PostgreSQL melarang penggunaan nilai enum baru dalam SQL yang *dieksekusi*
+--   di transaksi yang sama dengan ALTER TYPE ADD VALUE — termasuk DO $$ blocks.
+--   CREATE FUNCTION lolos karena body-nya disimpan sebagai teks (dikompile
+--   lazy saat pertama dipanggil). Backfill (INSERT biasa) tidak bisa lolos,
+--   jadi harus di-commit dulu di file ini, baru backfill dijalankan terpisah.
+--
+--  Isi file ini (langkah 1–6):
 --   1. Enum tambahan: reserve, unreserve
 --   2. Kolom reserved_qty di stocks
 --   3. Recreate trigger apply_stock_movement
 --   4. Recreate checkout_sale (cek available + reserve untuk antar)
 --   5. Recreate mark_sj_terkirim (unreserve + sale)
 --   6. Fungsi baru: create_surat_jalan (atomik, validasi sisa per item)
---   7. Backfill reserve untuk antar sales yang sudah ada
 --
 --  GAP yang belum ditangani (belum ada alur di app):
 --   - Pembatalan order antar: belum ada RPC cancel_antar_sale.
@@ -388,64 +398,5 @@ $$;
 grant execute on function create_surat_jalan(bigint, bigint, text, uuid, jsonb) to authenticated;
 
 
--- ────────────────────────────────────────────────────────────────
---  7. Backfill: reserve movements untuk antar sales yang sudah ada
---
---  Logika:
---   - Hanya sale fulfillment='antar', tidak void, belum punya reserve movement
---   - Per sale_item: reserved = base_qty - qty_yang_sudah_terkirim
---     (item yang sudah terkirim penuh → 0, tidak diinsert)
---
---  Jalankan sekali. Aman untuk dijalankan ulang (kondisi "belum punya reserve"
---  memastikan tidak dobel).
---
---  CATATAN TEKNIS: dibungkus DO $$ karena PostgreSQL melarang penggunaan
---  nilai enum baru ('reserve') dalam SQL statement biasa pada transaksi
---  yang sama tempat ALTER TYPE dijalankan. PL/pgSQL dikompile lazy
---  (saat dipanggil, bukan saat di-parse) sehingga lolos pembatasan ini.
---  Perbandingan sm.type::text = 'reserve' dipakai di WHERE untuk alasan
---  yang sama.
--- ────────────────────────────────────────────────────────────────
-
-do $$
-begin
-  insert into stock_movements (product_id, warehouse_id, base_qty, type, ref_table, ref_id, note)
-  select
-    si.product_id,
-    s.warehouse_id,
-    si.base_qty
-      - coalesce(
-          (select sum(sjl.base_qty)
-           from surat_jalan_lines sjl
-           join surat_jalan sj on sj.id = sjl.surat_jalan_id
-           where sjl.sale_item_id = si.id
-             and sj.status = 'terkirim'),
-          0
-        ),
-    'reserve'::movement_type,
-    'sales',
-    s.id,
-    'backfill: reserved-stock patch'
-  from sales s
-  join sale_items si on si.sale_id = s.id
-  where s.fulfillment = 'antar'
-    and s.voided = false
-    and not exists (
-      select 1 from stock_movements sm
-      where sm.ref_table = 'sales'
-        and sm.ref_id    = s.id
-        and sm.type::text = 'reserve'   -- cast ke text: hindari enum-in-same-txn error
-    )
-    and (
-      si.base_qty
-      - coalesce(
-          (select sum(sjl.base_qty)
-           from surat_jalan_lines sjl
-           join surat_jalan sj on sj.id = sjl.surat_jalan_id
-           where sjl.sale_item_id = si.id
-             and sj.status = 'terkirim'),
-          0
-        )
-    ) > 0;
-end;
-$$;
+-- Backfill ada di file terpisah: schema_patch_reserved_stock_backfill.sql
+-- Jalankan file itu SETELAH file ini selesai (transaksi terpisah).

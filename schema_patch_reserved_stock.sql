@@ -398,13 +398,21 @@ grant execute on function create_surat_jalan(bigint, bigint, text, uuid, jsonb) 
 --
 --  Jalankan sekali. Aman untuk dijalankan ulang (kondisi "belum punya reserve"
 --  memastikan tidak dobel).
+--
+--  CATATAN TEKNIS: dibungkus DO $$ karena PostgreSQL melarang penggunaan
+--  nilai enum baru ('reserve') dalam SQL statement biasa pada transaksi
+--  yang sama tempat ALTER TYPE dijalankan. PL/pgSQL dikompile lazy
+--  (saat dipanggil, bukan saat di-parse) sehingga lolos pembatasan ini.
+--  Perbandingan sm.type::text = 'reserve' dipakai di WHERE untuk alasan
+--  yang sama.
 -- ────────────────────────────────────────────────────────────────
 
-with pending as (
+do $$
+begin
+  insert into stock_movements (product_id, warehouse_id, base_qty, type, ref_table, ref_id, note)
   select
     si.product_id,
     s.warehouse_id,
-    s.id as sale_id,
     si.base_qty
       - coalesce(
           (select sum(sjl.base_qty)
@@ -413,7 +421,11 @@ with pending as (
            where sjl.sale_item_id = si.id
              and sj.status = 'terkirim'),
           0
-        ) as pending_base_qty
+        ),
+    'reserve'::movement_type,
+    'sales',
+    s.id,
+    'backfill: reserved-stock patch'
   from sales s
   join sale_items si on si.sale_id = s.id
   where s.fulfillment = 'antar'
@@ -421,15 +433,19 @@ with pending as (
     and not exists (
       select 1 from stock_movements sm
       where sm.ref_table = 'sales'
-        and sm.ref_id = s.id
-        and sm.type = 'reserve'
+        and sm.ref_id    = s.id
+        and sm.type::text = 'reserve'   -- cast ke text: hindari enum-in-same-txn error
     )
-)
-insert into stock_movements (product_id, warehouse_id, base_qty, type, ref_table, ref_id, note)
-select
-  product_id, warehouse_id, pending_base_qty,
-  'reserve'::movement_type,
-  'sales', sale_id,
-  'backfill: reserved-stock patch'
-from pending
-where pending_base_qty > 0;
+    and (
+      si.base_qty
+      - coalesce(
+          (select sum(sjl.base_qty)
+           from surat_jalan_lines sjl
+           join surat_jalan sj on sj.id = sjl.surat_jalan_id
+           where sjl.sale_item_id = si.id
+             and sj.status = 'terkirim'),
+          0
+        )
+    ) > 0;
+end;
+$$;

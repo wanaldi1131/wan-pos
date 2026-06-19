@@ -30,6 +30,7 @@ type Customer = {
   id: number
   name: string
   phone: string | null
+  address: string | null
   category: 'retail' | 'toko'
 }
 
@@ -76,6 +77,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
   const [custResults, setCustResults]   = useState<Customer[]>([])
   const [customer, setCustomer]         = useState<Customer | null>(null)
   const [custOpen, setCustOpen]         = useState(false)
+  const [deliveryAddress, setDeliveryAddress] = useState('')
   const custRef                         = useRef<HTMLDivElement>(null)
 
   // Cart
@@ -203,7 +205,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
     const t = setTimeout(async () => {
       const { data, error } = await createClient()
         .from('customers')
-        .select('id, name, phone, category')
+        .select('id, name, phone, address, category')
         .ilike('name', `%${custQuery}%`)
         .limit(8)
       if (!error && data) setCustResults(data as Customer[])
@@ -271,12 +273,13 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
     setSubmitting(true)
 
     const { data, error } = await createClient().rpc('checkout_sale', {
-      p_cashier_id:   user.id,
-      p_customer_id:  customer?.id ?? null,
-      p_warehouse_id: 1,
-      p_fulfillment:  fulfillment,
-      p_pay_method:   payMethod,
-      p_items:        cart.map(i => ({ unit_id: i.unit.id, qty: i.qty })),
+      p_cashier_id:       user.id,
+      p_customer_id:      customer?.id ?? null,
+      p_warehouse_id:     1,
+      p_fulfillment:      fulfillment,
+      p_pay_method:       payMethod,
+      p_items:            cart.map(i => ({ unit_id: i.unit.id, qty: i.qty })),
+      p_delivery_address: fulfillment === 'antar' ? (deliveryAddress.trim() || null) : null,
     })
 
     if (error || !data) {
@@ -289,6 +292,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
     setCart([])
     setCustomer(null)
     setCustQuery('')
+    setDeliveryAddress('')
     setFulfillment('ambil')
     setPayMethod('tunai')
     setCheckingOut(false)
@@ -309,6 +313,12 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
             className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
           >
             Kas
+          </a>
+          <a
+            href="/pelanggan"
+            className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
+          >
+            Pelanggan
           </a>
           <a
             href="/history"
@@ -510,7 +520,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
                   }`}>{customer.category}</span>
                 </div>
                 <button
-                  onClick={() => { setCustomer(null); setCustQuery('') }}
+                  onClick={() => { setCustomer(null); setCustQuery(''); setDeliveryAddress('') }}
                   className="text-gray-600 hover:text-red-400 text-xs"
                 >
                   ✕
@@ -523,7 +533,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
                   <button
                     key={c.id}
                     className="w-full text-left px-4 py-3 hover:bg-white/8 border-b border-white/5 last:border-0"
-                    onClick={() => { setCustomer(c); setCustQuery(c.name); setCustOpen(false) }}
+                    onClick={() => { setCustomer(c); setCustQuery(c.name); setCustOpen(false); setDeliveryAddress(c.address ?? '') }}
                   >
                     <span className="text-white text-sm font-medium">{c.name}</span>
                     {c.phone && <span className="text-gray-500 text-xs ml-2">{c.phone}</span>}
@@ -603,6 +613,16 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
                 </button>
               ))}
             </div>
+
+            {fulfillment === 'antar' && (
+              <textarea
+                value={deliveryAddress}
+                onChange={e => setDeliveryAddress(e.target.value)}
+                placeholder="Alamat pengiriman…"
+                rows={2}
+                className="w-full bg-white/8 border border-white/10 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            )}
 
             <div className="flex items-center justify-between px-1">
               <div>

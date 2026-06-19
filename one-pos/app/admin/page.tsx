@@ -33,6 +33,7 @@ type SaleAntar = {
   pay_method: string
   pay_status: string
   created_at: string
+  delivery_address: string | null
   customer: Customer | null
   surat_jalan: SuratJalanRec[]
   sale_items: { id: number; base_qty: number }[]
@@ -186,7 +187,7 @@ function getItemDispatch(item: SaleItem, sjs: SuratJalanRec[]) {
 // ── Print surat jalan ──────────────────────────────────────────
 function printSJ(
   sj: SuratJalanRec,
-  sale: Pick<SaleAntar, 'code' | 'pay_method' | 'total'>,
+  sale: Pick<SaleAntar, 'code' | 'pay_method' | 'total' | 'delivery_address'>,
   customer: Customer | null,
   allItems: SaleItem[],
 ) {
@@ -251,7 +252,7 @@ function printSJ(
     <div class="lbl">Dikirim kepada</div>
     <div class="val"><strong>${customer?.name ?? '—'}</strong></div>
     ${customer?.phone ? `<div class="val">${customer.phone}</div>` : ''}
-    ${customer?.address ? `<div class="val">${customer.address}</div>` : ''}
+    ${(sale.delivery_address ?? customer?.address) ? `<div class="val">${sale.delivery_address ?? customer?.address}</div>` : ''}
   </div>
   <div class="ib">
     ${sj.plat ? `<div class="lbl">Kendaraan</div><div class="val"><strong>${sj.plat}</strong></div>` : ''}
@@ -659,7 +660,7 @@ export default function AdminPage() {
     const { data, error: err } = await sb
       .from('sales')
       .select(`
-        id, code, total, pay_method, pay_status, created_at,
+        id, code, total, pay_method, pay_status, created_at, delivery_address,
         customer:customers(id, name, phone, address),
         surat_jalan(id, code, status, plat, created_at, driver:drivers(name), surat_jalan_lines(sale_item_id, base_qty)),
         sale_items(id, base_qty)
@@ -1114,8 +1115,8 @@ export default function AdminPage() {
                             {sale.customer?.phone && (
                               <><span>·</span><span>{sale.customer.phone}</span></>
                             )}
-                            {sale.customer?.address && (
-                              <><span>·</span><span className="text-gray-600 truncate max-w-40">{sale.customer.address}</span></>
+                            {sale.delivery_address && (
+                              <><span>·</span><span className="text-gray-600 truncate max-w-40">{sale.delivery_address}</span></>
                             )}
                           </div>
                         </div>

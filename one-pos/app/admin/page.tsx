@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 
@@ -59,7 +59,7 @@ type SaleItem = {
   unit: { unit_name: string } | null
 }
 
-type Tab = 'antaran' | 'belum_lunas' | 'kasir' | 'pendapatan' | 'kas_tunai'
+type Tab = 'antaran' | 'belum_lunas' | 'kasir' | 'pendapatan' | 'kas_tunai' | 'produk' | 'kategori'
 
 type KasTunaiDay = {
   date: string
@@ -105,6 +105,40 @@ type KasirProfile = {
   email_login: string | null
   active: boolean
   created_at: string
+}
+
+type ProductUnit = {
+  id: number
+  unit_name: string
+  factor_to_base: number
+  price: number
+  price_toko: number | null
+  is_default: boolean
+}
+
+type ProductFull = {
+  id: number
+  name: string
+  base_unit: string
+  sku: string | null
+  category: string | null
+  active: boolean
+  product_units: ProductUnit[]
+}
+
+type UnitFormRow = {
+  id?: number
+  unit_name: string
+  factor_to_base: string
+  price: string
+  price_toko: string
+  is_default: boolean
+}
+
+type Category = {
+  id: number
+  name: string
+  product_count: number
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -303,6 +337,35 @@ export default function AdminPage() {
   const [kasirMsg, setKasirMsg]         = useState<{ ok: boolean; text: string } | null>(null)
   const [savingKasir, setSavingKasir]   = useState(false)
 
+  // Produk
+  const [products, setProducts]               = useState<ProductFull[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [productSearch, setProductSearch]     = useState('')
+  const [showProductForm, setShowProductForm] = useState(false)
+  const [editingProduct, setEditingProduct]   = useState<ProductFull | null>(null)
+  const [pName, setPName]                     = useState('')
+  const [pBaseUnit, setPBaseUnit]             = useState('')
+  const [pSku, setPSku]                       = useState('')
+  const [pCategory, setPCategory]             = useState('')
+  const [pUnits, setPUnits]                   = useState<UnitFormRow[]>([])
+  const [savingProduct, setSavingProduct]     = useState(false)
+  const [productMsg, setProductMsg]           = useState<{ ok: boolean; text: string } | null>(null)
+  const [togglingProductId, setTogglingProductId] = useState<number | null>(null)
+  const [productHasMore, setProductHasMore]       = useState(false)
+  const [loadingMoreProducts, setLoadingMoreProducts] = useState(false)
+  const productSentinelRef = useRef<HTMLDivElement>(null)
+
+  // Kategori
+  const [categories, setCategories]           = useState<Category[]>([])
+  const [loadingCategories, setLoadingCategories] = useState(false)
+  const [categoryError, setCategoryError]     = useState<string | null>(null)
+  const [showAddCat, setShowAddCat]           = useState(false)
+  const [newCatName, setNewCatName]           = useState('')
+  const [editingCat, setEditingCat]           = useState<Category | null>(null)
+  const [editCatName, setEditCatName]         = useState('')
+  const [savingCat, setSavingCat]             = useState(false)
+  const [deletingCatId, setDeletingCatId]     = useState<number | null>(null)
+
   // ── Auth ────────────────────────────────────────────────────
   useEffect(() => {
     sb.auth.getUser().then(async ({ data }) => {
@@ -333,6 +396,248 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === 'kasir') loadKasirList()
   }, [tab, loadKasirList])
+
+  const PROD_PAGE = 40
+
+  const mergeUnits = (prods: any[], units: any[]): ProductFull[] =>
+    prods.map(p => ({
+      ...p,
+      product_units: units
+        .filter((u: any) => u.product_id === p.id)
+        .map((u: any) => ({
+          id: u.id, unit_name: u.unit_name,
+          factor_to_base: Number(u.factor_to_base),
+          price: Number(u.price),
+          price_toko: u.price_toko != null ? Number(u.price_toko) : null,
+          is_default: u.is_default,
+        })),
+    }))
+
+  const loadProducts = useCallback(async (search: string) => {
+    setLoadingProducts(true)
+    setProducts([])
+    setProductHasMore(false)
+
+    let q = sb.from('products')
+      .select('id, name, base_unit, sku, category, active')
+      .order('name')
+      .range(0, PROD_PAGE - 1)
+    if (search.trim()) q = (q as any).ilike('name', `%${search.trim()}%`)
+
+    const { data: prods } = await q
+    if (!prods || prods.length === 0) { setLoadingProducts(false); return }
+
+    const { data: units } = await sb.from('product_units')
+      .select('id, product_id, unit_name, factor_to_base, price, price_toko, is_default')
+      .in('product_id', prods.map((p: any) => p.id))
+      .order('is_default', { ascending: false })
+
+    setProducts(mergeUnits(prods, units ?? []))
+    setProductHasMore(prods.length === PROD_PAGE)
+    setLoadingProducts(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sb])
+
+  useEffect(() => {
+    if (tab === 'produk' && user) loadProducts(productSearch)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, user])
+
+  useEffect(() => {
+    if (tab !== 'produk' || !user) return
+    const t = setTimeout(() => loadProducts(productSearch), 350)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productSearch])
+
+  async function loadMoreProducts() {
+    if (loadingMoreProducts || !productHasMore) return
+    setLoadingMoreProducts(true)
+    const offset = products.length
+    let q = sb.from('products')
+      .select('id, name, base_unit, sku, category, active')
+      .order('name')
+      .range(offset, offset + PROD_PAGE - 1)
+    if (productSearch.trim()) q = (q as any).ilike('name', `%${productSearch.trim()}%`)
+    const { data: prods } = await q
+    if (!prods || prods.length === 0) { setProductHasMore(false); setLoadingMoreProducts(false); return }
+    const { data: units } = await sb.from('product_units')
+      .select('id, product_id, unit_name, factor_to_base, price, price_toko, is_default')
+      .in('product_id', prods.map((p: any) => p.id))
+      .order('is_default', { ascending: false })
+    setProducts(prev => [...prev, ...mergeUnits(prods, units ?? [])])
+    setProductHasMore(prods.length === PROD_PAGE)
+    setLoadingMoreProducts(false)
+  }
+
+  useEffect(() => {
+    const el = productSentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMoreProducts() },
+      { rootMargin: '200px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productHasMore, loadingMoreProducts, products.length])
+
+  function openNewProductForm() {
+    setEditingProduct(null)
+    setPName(''); setPBaseUnit(''); setPSku(''); setPCategory('')
+    setPUnits([{ unit_name: '', factor_to_base: '1', price: '', price_toko: '', is_default: true }])
+    setProductMsg(null)
+    setShowProductForm(true)
+  }
+
+  function openEditProductForm(p: ProductFull) {
+    setEditingProduct(p)
+    setPName(p.name)
+    setPBaseUnit(p.base_unit)
+    setPSku(p.sku ?? '')
+    setPCategory(p.category ?? '')
+    setPUnits(p.product_units.map(u => ({
+      id: u.id,
+      unit_name: u.unit_name,
+      factor_to_base: String(u.factor_to_base),
+      price: String(u.price),
+      price_toko: u.price_toko != null ? String(u.price_toko) : '',
+      is_default: u.is_default,
+    })))
+    setProductMsg(null)
+    setShowProductForm(true)
+  }
+
+  async function saveProduct() {
+    if (!pName.trim() || !pBaseUnit.trim()) {
+      setProductMsg({ ok: false, text: 'Nama dan satuan dasar wajib diisi' })
+      return
+    }
+    const validUnits = pUnits.filter(u => u.unit_name.trim() && u.price.trim())
+    if (validUnits.length === 0) {
+      setProductMsg({ ok: false, text: 'Minimal satu satuan jual harus diisi (nama + harga)' })
+      return
+    }
+    const defaultCount = validUnits.filter(u => u.is_default).length
+    if (defaultCount === 0) {
+      setProductMsg({ ok: false, text: 'Pilih satu satuan sebagai default' })
+      return
+    }
+
+    setSavingProduct(true)
+    setProductMsg(null)
+
+    if (editingProduct) {
+      const { error: pErr } = await sb.from('products')
+        .update({ name: pName.trim(), base_unit: pBaseUnit.trim(), sku: pSku.trim() || null, category: pCategory.trim() || null })
+        .eq('id', editingProduct.id)
+      if (pErr) { setProductMsg({ ok: false, text: pErr.message }); setSavingProduct(false); return }
+
+      for (const u of validUnits) {
+        const uData = {
+          product_id: editingProduct.id,
+          unit_name: u.unit_name.trim(),
+          factor_to_base: parseFloat(u.factor_to_base) || 1,
+          price: parseFloat(u.price) || 0,
+          price_toko: u.price_toko.trim() ? parseFloat(u.price_toko) : null,
+          is_default: u.is_default,
+        }
+        if (u.id) {
+          const { error } = await sb.from('product_units').update(uData).eq('id', u.id)
+          if (error) { setProductMsg({ ok: false, text: error.message }); setSavingProduct(false); return }
+        } else {
+          const { error } = await sb.from('product_units').insert(uData)
+          if (error) { setProductMsg({ ok: false, text: error.message }); setSavingProduct(false); return }
+        }
+      }
+
+      setProductMsg({ ok: true, text: `"${pName}" berhasil diperbarui` })
+    } else {
+      const { data: newProd, error: pErr } = await sb.from('products')
+        .insert({ name: pName.trim(), base_unit: pBaseUnit.trim(), sku: pSku.trim() || null, category: pCategory.trim() || null, active: true })
+        .select('id')
+        .single()
+      if (pErr || !newProd) { setProductMsg({ ok: false, text: pErr?.message ?? 'Gagal menyimpan' }); setSavingProduct(false); return }
+
+      const unitRows = validUnits.map(u => ({
+        product_id: (newProd as any).id,
+        unit_name: u.unit_name.trim(),
+        factor_to_base: parseFloat(u.factor_to_base) || 1,
+        price: parseFloat(u.price) || 0,
+        price_toko: u.price_toko.trim() ? parseFloat(u.price_toko) : null,
+        is_default: u.is_default,
+      }))
+      const { error: uErr } = await sb.from('product_units').insert(unitRows)
+      if (uErr) { setProductMsg({ ok: false, text: uErr.message }); setSavingProduct(false); return }
+
+      setProductMsg({ ok: true, text: `Produk "${pName}" berhasil ditambahkan` })
+    }
+
+    setSavingProduct(false)
+    loadProducts(productSearch)
+    setTimeout(() => { setShowProductForm(false); setProductMsg(null) }, 1500)
+  }
+
+  async function toggleProductActive(p: ProductFull) {
+    setTogglingProductId(p.id)
+    await sb.from('products').update({ active: !p.active }).eq('id', p.id)
+    setProducts(prev => prev.map(x => x.id === p.id ? { ...x, active: !x.active } : x))
+    setTogglingProductId(null)
+  }
+
+  const loadCategories = useCallback(async () => {
+    setLoadingCategories(true)
+    setCategoryError(null)
+    const [{ data: cats, error }, { data: prods }] = await Promise.all([
+      sb.from('categories').select('id, name').order('name'),
+      sb.from('products').select('category').not('category', 'is', null),
+    ])
+    if (error) { setCategoryError(error.message); setLoadingCategories(false); return }
+    const countMap: Record<string, number> = {}
+    for (const p of prods ?? []) {
+      if (p.category) countMap[p.category] = (countMap[p.category] ?? 0) + 1
+    }
+    setCategories((cats ?? []).map((c: any) => ({ id: c.id, name: c.name, product_count: countMap[c.name] ?? 0 })))
+    setLoadingCategories(false)
+  }, [sb])
+
+  useEffect(() => {
+    if (tab === 'kategori' && user) loadCategories()
+  }, [tab, user, loadCategories])
+
+  async function addCategory() {
+    const name = newCatName.trim()
+    if (!name) return
+    setSavingCat(true)
+    const { error } = await sb.from('categories').insert({ name })
+    setSavingCat(false)
+    if (error) { setCategoryError(error.message); return }
+    setNewCatName(''); setShowAddCat(false)
+    loadCategories()
+  }
+
+  async function renameCategory() {
+    if (!editingCat) return
+    const name = editCatName.trim()
+    if (!name || name === editingCat.name) { setEditingCat(null); return }
+    setSavingCat(true)
+    const { error } = await sb.from('categories').update({ name }).eq('id', editingCat.id)
+    if (!error && editingCat.product_count > 0) {
+      await sb.from('products').update({ category: name }).eq('category', editingCat.name)
+    }
+    setSavingCat(false)
+    if (error) { setCategoryError(error.message); return }
+    setEditingCat(null)
+    loadCategories()
+  }
+
+  async function deleteCategory(cat: Category) {
+    if (cat.product_count > 0) return
+    setDeletingCatId(cat.id)
+    await sb.from('categories').delete().eq('id', cat.id)
+    setDeletingCatId(null)
+    setCategories(prev => prev.filter(c => c.id !== cat.id))
+  }
 
   async function toggleActive(kasir: KasirProfile) {
     setTogglingId(kasir.id)
@@ -697,6 +1002,7 @@ export default function AdminPage() {
           ['belum_lunas', 'Belum Lunas', totalBelumLunas,  'bg-red-500 text-white'],
           ['pendapatan',  'Pendapatan',  0,                ''],
           ['kas_tunai',   'Kas Tunai',   0,                ''],
+          ...(isAdmin ? [['produk', 'Produk', 0, ''], ['kategori', 'Kategori', 0, '']] : []),
           ['kasir',       'Kasir',       0,                ''],
         ] as [Tab, string, number, string][]).map(([v, label, count, badgeCls]) => (
           <button
@@ -1419,6 +1725,385 @@ export default function AdminPage() {
                       })}
                     </>
                   )}
+                </div>
+              )
+            })()
+
+          ) : tab === 'kategori' ? (
+
+            /* ── TAB KATEGORI ── */
+            <div className="space-y-3 mt-1">
+
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <p className="text-white font-bold text-base">Kategori Produk</p>
+                <button
+                  onClick={() => { setShowAddCat(f => !f); setNewCatName(''); setCategoryError(null) }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                >
+                  {showAddCat ? 'Batal' : '+ Tambah Kategori'}
+                </button>
+              </div>
+
+              {/* Error / SQL hint */}
+              {categoryError && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm space-y-1">
+                  <p className="font-semibold">Gagal memuat kategori</p>
+                  <p className="text-red-300/70 text-xs font-mono">{categoryError}</p>
+                  <p className="text-gray-500 text-xs">Pastikan sudah menjalankan <code className="text-amber-400">schema_patch_categories.sql</code> di Supabase SQL Editor.</p>
+                </div>
+              )}
+
+              {/* Form tambah */}
+              {showAddCat && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-2">
+                  <input
+                    className="flex-1 bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                    placeholder="Nama kategori baru…"
+                    value={newCatName}
+                    onChange={e => setNewCatName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addCategory() }}
+                    autoFocus
+                  />
+                  <button
+                    disabled={savingCat || !newCatName.trim()}
+                    onClick={addCategory}
+                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white text-sm font-semibold transition-colors whitespace-nowrap"
+                  >
+                    {savingCat ? '...' : 'Simpan'}
+                  </button>
+                </div>
+              )}
+
+              {/* List */}
+              {loadingCategories ? (
+                <p className="text-gray-500 text-center mt-12 text-sm">Memuat kategori...</p>
+              ) : !categoryError && categories.length === 0 ? (
+                <p className="text-gray-600 text-center mt-12 text-sm">Belum ada kategori — jalankan <code className="text-amber-400 text-xs">schema_patch_categories.sql</code> dulu</p>
+              ) : (
+                categories.map(cat => (
+                  <div
+                    key={cat.id}
+                    className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-center gap-3"
+                  >
+                    {editingCat?.id === cat.id ? (
+                      /* Mode edit inline */
+                      <>
+                        <input
+                          className="flex-1 bg-white/10 text-white rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-indigo-500/50"
+                          value={editCatName}
+                          onChange={e => setEditCatName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') renameCategory()
+                            if (e.key === 'Escape') setEditingCat(null)
+                          }}
+                          autoFocus
+                        />
+                        <button
+                          disabled={savingCat}
+                          onClick={renameCategory}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-40"
+                        >{savingCat ? '...' : 'Simpan'}</button>
+                        <button
+                          onClick={() => setEditingCat(null)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/8 text-gray-400 hover:bg-white/15 transition-colors"
+                        >Batal</button>
+                      </>
+                    ) : (
+                      /* Mode tampil */
+                      <>
+                        <div className="flex-1 min-w-0 flex items-center gap-2">
+                          <p className="text-white text-sm font-medium">{cat.name}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                            cat.product_count > 0
+                              ? 'bg-indigo-500/15 text-indigo-400'
+                              : 'bg-white/8 text-gray-500'
+                          }`}>
+                            {cat.product_count} produk
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => { setEditingCat(cat); setEditCatName(cat.name); setCategoryError(null) }}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white/8 text-gray-300 border border-white/10 hover:bg-white/15 transition-colors"
+                          >Edit</button>
+                          <button
+                            onClick={() => deleteCategory(cat)}
+                            disabled={cat.product_count > 0 || deletingCatId === cat.id}
+                            title={cat.product_count > 0 ? `Tidak bisa dihapus — masih ada ${cat.product_count} produk` : 'Hapus kategori'}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"
+                          >
+                            {deletingCatId === cat.id ? '...' : 'Hapus'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+          ) : tab === 'produk' ? (
+
+            /* ── TAB PRODUK ── */
+            (() => {
+              const emptyUnitRow = (): UnitFormRow => ({
+                unit_name: '', factor_to_base: '1', price: '', price_toko: '', is_default: false,
+              })
+
+              return (
+                <div className="space-y-3 mt-1">
+
+                  {/* Header + tombol tambah */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-white font-bold text-base">Daftar Produk</p>
+                    <button
+                      onClick={() => {
+                        if (showProductForm) { setShowProductForm(false); setProductMsg(null) }
+                        else openNewProductForm()
+                      }}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                    >
+                      {showProductForm ? 'Tutup Form' : '+ Tambah Produk'}
+                    </button>
+                  </div>
+
+                  {/* Form tambah / edit produk */}
+                  {showProductForm && (
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+                      <p className="text-white font-semibold text-sm">
+                        {editingProduct ? `Edit: ${editingProduct.name}` : 'Produk Baru'}
+                      </p>
+
+                      {/* Info produk */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="col-span-2">
+                          <label className="text-gray-400 text-xs mb-1 block">Nama Produk *</label>
+                          <input
+                            className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                            placeholder="cth: Semen Tiga Roda"
+                            value={pName}
+                            onChange={e => setPName(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 text-xs mb-1 block">Satuan Dasar *</label>
+                          <input
+                            className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                            placeholder="cth: sak, pcs, kg"
+                            value={pBaseUnit}
+                            onChange={e => setPBaseUnit(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 text-xs mb-1 block">SKU / Kode</label>
+                          <input
+                            className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                            placeholder="opsional"
+                            value={pSku}
+                            onChange={e => setPSku(e.target.value)}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-gray-400 text-xs mb-1 block">Kategori</label>
+                          <input
+                            className="w-full bg-white/8 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                            placeholder="cth: material, elektronik (opsional)"
+                            value={pCategory}
+                            onChange={e => setPCategory(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Satuan jual */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Satuan Jual</label>
+                          <button
+                            onClick={() => setPUnits(prev => [...prev, emptyUnitRow()])}
+                            className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
+                          >+ Tambah Satuan</button>
+                        </div>
+
+                        <div className="space-y-3">
+                          {pUnits.map((u, i) => (
+                            <div key={i} className="bg-white/5 rounded-xl p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => setPUnits(prev => prev.map((x, j) => ({ ...x, is_default: j === i })))}
+                                    className={`w-4 h-4 rounded-full border-2 shrink-0 transition-colors ${
+                                      u.is_default ? 'bg-indigo-500 border-indigo-500' : 'border-gray-600 hover:border-indigo-400'
+                                    }`}
+                                    title="Jadikan default"
+                                  />
+                                  <span className="text-gray-400 text-xs">{u.is_default ? 'Default' : 'Jadikan default'}</span>
+                                </div>
+                                {pUnits.length > 1 && !u.id && (
+                                  <button
+                                    onClick={() => setPUnits(prev => prev.filter((_, j) => j !== i))}
+                                    className="text-red-500/60 hover:text-red-400 text-xs"
+                                  >Hapus</button>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-gray-500 text-[11px] mb-1 block">Nama Satuan *</label>
+                                  <input
+                                    className="w-full bg-white/8 text-white placeholder-gray-600 rounded-lg px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 border border-white/10"
+                                    placeholder="cth: sak, lusin"
+                                    value={u.unit_name}
+                                    onChange={e => setPUnits(prev => prev.map((x, j) => j === i ? { ...x, unit_name: e.target.value } : x))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-500 text-[11px] mb-1 block">Faktor ke {pBaseUnit || 'base'}</label>
+                                  <input
+                                    type="number"
+                                    min="0.001"
+                                    step="any"
+                                    className="w-full bg-white/8 text-white placeholder-gray-600 rounded-lg px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 border border-white/10"
+                                    placeholder="1"
+                                    value={u.factor_to_base}
+                                    onChange={e => setPUnits(prev => prev.map((x, j) => j === i ? { ...x, factor_to_base: e.target.value } : x))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-500 text-[11px] mb-1 block">Harga Retail *</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="w-full bg-white/8 text-white placeholder-gray-600 rounded-lg px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 border border-white/10"
+                                    placeholder="0"
+                                    value={u.price}
+                                    onChange={e => setPUnits(prev => prev.map((x, j) => j === i ? { ...x, price: e.target.value } : x))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-gray-500 text-[11px] mb-1 block">Harga Toko</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="w-full bg-white/8 text-white placeholder-gray-600 rounded-lg px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 border border-white/10"
+                                    placeholder="opsional"
+                                    value={u.price_toko}
+                                    onChange={e => setPUnits(prev => prev.map((x, j) => j === i ? { ...x, price_toko: e.target.value } : x))}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {productMsg && (
+                        <p className={`text-xs px-3 py-2 rounded-xl ${productMsg.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                          {productMsg.text}
+                        </p>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setShowProductForm(false); setProductMsg(null) }}
+                          className="flex-1 py-2 rounded-xl bg-white/5 text-gray-400 text-sm hover:bg-white/10 transition-colors"
+                        >Batal</button>
+                        <button
+                          disabled={savingProduct}
+                          onClick={saveProduct}
+                          className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white font-bold text-sm transition-colors"
+                        >
+                          {savingProduct ? 'Menyimpan...' : editingProduct ? 'Simpan Perubahan' : 'Tambah Produk'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Search */}
+                  <input
+                    className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-600 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Cari nama atau SKU..."
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                  />
+
+                  {/* List produk */}
+                  {loadingProducts ? (
+                    <p className="text-gray-500 text-center mt-12 text-sm">Memuat produk...</p>
+                  ) : products.length === 0 ? (
+                    <p className="text-gray-600 text-center mt-12 text-sm">
+                      {productSearch.trim() ? `Tidak ditemukan: "${productSearch}"` : 'Belum ada produk'}
+                    </p>
+                  ) : (
+                    products.map(p => (
+                      <div
+                        key={p.id}
+                        className={`border rounded-2xl p-4 ${p.active ? 'bg-white/5 border-white/10' : 'bg-white/2 border-white/5 opacity-60'}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-white font-semibold text-sm">{p.name}</p>
+                              {!p.active && (
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-gray-500/20 text-gray-500">Nonaktif</span>
+                              )}
+                              {p.sku && (
+                                <span className="text-[10px] font-mono text-gray-500">{p.sku}</span>
+                              )}
+                            </div>
+                            <p className="text-gray-500 text-xs mt-0.5">Satuan dasar: {p.base_unit}{p.category ? ` · ${p.category}` : ''}</p>
+
+                            {/* Units */}
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {p.product_units.map(u => (
+                                <div
+                                  key={u.id}
+                                  className={`text-xs px-2 py-1 rounded-lg border ${
+                                    u.is_default
+                                      ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300'
+                                      : 'bg-white/5 border-white/10 text-gray-400'
+                                  }`}
+                                >
+                                  <span className="font-semibold">{u.unit_name}</span>
+                                  {u.factor_to_base !== 1 && <span className="text-gray-500"> ×{fmtQty(u.factor_to_base)}</span>}
+                                  <span className="ml-1 text-gray-400">{rp(u.price)}</span>
+                                  {u.price_toko != null && (
+                                    <span className="ml-1 text-amber-500/70">/ {rp(u.price_toko)}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => openEditProductForm(p)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white/8 text-gray-300 border border-white/10 hover:bg-white/15 transition-colors"
+                            >Edit</button>
+                            <button
+                              onClick={() => toggleProductActive(p)}
+                              disabled={togglingProductId === p.id}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-40 ${
+                                p.active
+                                  ? 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20'
+                                  : 'bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20'
+                              }`}
+                            >
+                              {togglingProductId === p.id ? '...' : p.active ? 'Nonaktifkan' : 'Aktifkan'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {/* Sentinel infinite scroll */}
+                  <div ref={productSentinelRef} className="py-3 text-center">
+                    {loadingMoreProducts && <p className="text-gray-600 text-xs">Memuat lebih banyak...</p>}
+                    {!loadingMoreProducts && !productHasMore && products.length > 0 && (
+                      <p className="text-gray-700 text-xs">{products.length} produk ditampilkan</p>
+                    )}
+                  </div>
                 </div>
               )
             })()

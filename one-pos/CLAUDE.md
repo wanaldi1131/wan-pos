@@ -15,6 +15,9 @@
 - Login kasir: email internal (kolom email_login) + PIN via signInWithPassword.
   Identitas sejati = auth.users.id, jangan diganti.
 - outlet = titik jual; warehouse = tempat stok. Beda konsep.
+-  utang & piutang TIDAK disimpan sebagai angka; selalu dihitung dari faktur/sales yang belum lunas.
+- apa pun yang udah pernah terpakai di transaksi, jangan pernah di-hard-delete — nonaktifin aja. Itu berlaku ke produk, kasir, customer, supplier nanti. Hard delete cuma buat data yang belum pernah dipake (salah ketik produk yang belum pernah kejual, misal).
 
 ## Bahasa
 - Komentar & teks UI pakai Bahasa Indonesia.
+

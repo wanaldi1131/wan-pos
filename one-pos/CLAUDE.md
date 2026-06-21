@@ -21,3 +21,5 @@
 ## Bahasa
 - Komentar & teks UI pakai Bahasa Indonesia.
 
+
+jangan langsung hapus dan commit perubahan

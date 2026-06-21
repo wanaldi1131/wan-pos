@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { DarkSelect } from '@/components/DarkSelect'
 
 // ── Types ──────────────────────────────────────────────────────
 type UnitOption = { id: number; unit_name: string; factor_to_base: number }
@@ -116,8 +117,8 @@ export default function PenerimaanPage() {
     const { data } = await sb.from('goods_receipts')
       .select(`
         id, code, received_at, note,
-        supplier:suppliers(name),
-        checker:profiles(full_name),
+        supplier:suppliers!supplier_id(name),
+        checker:profiles!checker_id(full_name),
         goods_receipt_items(
           id, qty, base_qty,
           product:products(name, base_unit),
@@ -275,30 +276,22 @@ export default function PenerimaanPage() {
 
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Supplier *</label>
-                <select
-                  value={fSupplier ?? ''}
-                  onChange={e => setFSupplier(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="">— Pilih supplier —</option>
-                  {suppliers.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                <DarkSelect
+                  value={fSupplier ? String(fSupplier) : ''}
+                  onChange={v => setFSupplier(v ? Number(v) : null)}
+                  options={suppliers.map(s => ({ value: String(s.id), label: s.name }))}
+                  placeholder="— Pilih supplier —"
+                />
               </div>
 
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Checker *</label>
-                <select
+                <DarkSelect
                   value={fChecker}
-                  onChange={e => setFChecker(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="">— Pilih kasir —</option>
-                  {kasirList.map(k => (
-                    <option key={k.id} value={k.id}>{k.full_name}</option>
-                  ))}
-                </select>
+                  onChange={setFChecker}
+                  options={kasirList.map(k => ({ value: k.id, label: k.full_name }))}
+                  placeholder="— Pilih kasir —"
+                />
               </div>
 
               <div>
@@ -378,15 +371,13 @@ export default function PenerimaanPage() {
                     {/* Unit + Qty — tampil setelah produk dipilih */}
                     {row.productId && (
                       <div className="flex gap-2">
-                        <select
-                          value={row.unitId ?? ''}
-                          onChange={e => updateRow(row.rowId, { unitId: Number(e.target.value) })}
-                          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                        >
-                          {row.unitOptions.map(u => (
-                            <option key={u.id} value={u.id}>{u.unit_name}</option>
-                          ))}
-                        </select>
+                        <div className="flex-1">
+                          <DarkSelect
+                            value={row.unitId ? String(row.unitId) : ''}
+                            onChange={v => updateRow(row.rowId, { unitId: Number(v) })}
+                            options={row.unitOptions.map(u => ({ value: String(u.id), label: u.unit_name }))}
+                          />
+                        </div>
                         <input
                           type="number"
                           inputMode="decimal"

@@ -1022,12 +1022,20 @@ export default function AdminPage() {
           </button>
         ))}
         {isAdmin && (
-          <a
-            href="/supplier"
-            className="flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 bg-white/8 text-gray-400 hover:bg-white/15"
-          >
-            Supplier
-          </a>
+          <>
+            <a
+              href="/supplier"
+              className="flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 bg-white/8 text-gray-400 hover:bg-white/15"
+            >
+              Supplier
+            </a>
+            <a
+              href="/penerimaan"
+              className="flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 bg-white/8 text-gray-400 hover:bg-white/15"
+            >
+              Penerimaan
+            </a>
+          </>
         )}
       </div>
 

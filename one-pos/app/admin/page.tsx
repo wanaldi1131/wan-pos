@@ -1033,7 +1033,7 @@ export default function AdminPage() {
               href="/penerimaan"
               className="flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 bg-white/8 text-gray-400 hover:bg-white/15"
             >
-              Penerimaan
+              Penerimaan Barang
             </a>
           </>
         )}

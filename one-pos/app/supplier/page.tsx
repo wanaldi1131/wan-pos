@@ -302,34 +302,10 @@ export default function SupplierPage() {
                             disabled={togglingSmId === sm.id}
                             className="text-gray-600 hover:text-red-400 text-xs transition-colors disabled:opacity-40"
                           >
-                            {togglingSmId === sm.id ? '…' : 'Resign'}
+                            {togglingSmId === sm.id ? '…' : 'Hapus'}
                           </button>
                         </div>
                       ))}
-
-                      {/* Inactive salesmen */}
-                      {inactiveSalesmen.length > 0 && (
-                        <div className="mt-2 pt-2 border-t border-white/5">
-                          <p className="text-gray-700 text-[10px] uppercase tracking-wide mb-1.5">Non-aktif</p>
-                          {inactiveSalesmen.map(sm => (
-                            <div key={sm.id} className="flex items-center justify-between py-1.5">
-                              <div>
-                                <span className="text-gray-600 text-sm line-through">{sm.name}</span>
-                                {sm.phone && (
-                                  <span className="text-gray-700 text-xs ml-2">{sm.phone}</span>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => toggleSalesman(sm.id, false)}
-                                disabled={togglingSmId === sm.id}
-                                className="text-gray-600 hover:text-green-400 text-xs transition-colors disabled:opacity-40"
-                              >
-                                {togglingSmId === sm.id ? '…' : 'Aktifkan'}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
 
                       {/* Inline form tambah salesman */}
                       {addSalesmanFor === s.id && (

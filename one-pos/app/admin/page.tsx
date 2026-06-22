@@ -1041,6 +1041,12 @@ export default function AdminPage() {
             >
               Retur Supplier
             </a>
+            <a
+              href="/purchase-invoice"
+              className="flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 bg-white/8 text-gray-400 hover:bg-white/15"
+            >
+              Invoice Pembelian
+            </a>
           </>
         )}
       </div>

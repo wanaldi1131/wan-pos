@@ -466,6 +466,16 @@ export default function PenerimaanPage() {
                             ))}
                           </tbody>
                         </table>
+                        {(userRole === 'admin' || userRole === 'owner') && (
+                          <div className="mt-3 flex justify-end">
+                            <a
+                              href={`/purchase-invoice?mode=create&gr=${gr.id}`}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              Buat Invoice
+                            </a>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

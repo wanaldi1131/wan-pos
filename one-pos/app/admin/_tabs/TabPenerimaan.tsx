@@ -41,6 +41,7 @@ type GrRecord = {
   supplier: { name: string } | null
   checker: { full_name: string } | null
   goods_receipt_items: GrItem[]
+  purchase_invoices: { id: number }[]
 }
 
 const fmtDate = (d: string) =>
@@ -90,7 +91,8 @@ export default function TabPenerimaan({ user }: { user: User }) {
           id, qty, base_qty,
           product:products(name, base_unit),
           unit:product_units(unit_name)
-        )
+        ),
+        purchase_invoices(id)
       `)
       .order('created_at', { ascending: false })
       .limit(100)
@@ -351,12 +353,14 @@ export default function TabPenerimaan({ user }: { user: User }) {
                           ))}
                         </tbody>
                       </table>
-                      <div className="mt-3 flex justify-end">
-                        <a href={`/purchase-invoice?mode=create&gr=${gr.id}`}
-                          className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
-                          Buat Invoice
-                        </a>
-                      </div>
+                      {gr.purchase_invoices.length === 0 && (
+                        <div className="mt-3 flex justify-end">
+                          <a href={`/purchase-invoice?mode=create&gr=${gr.id}`}
+                            className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+                            Buat Invoice
+                          </a>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

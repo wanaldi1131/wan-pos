@@ -23,21 +23,24 @@ type Supplier = {
 
 type SalesmanRow = { rowId: string; name: string; phone: string }
 
+const fmtRp = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+
 export default function TabSupplier({ user }: { user: User }) {
   const sb = createClient()
 
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [loading, setLoading]     = useState(false)
+  const [suppliers, setSuppliers]   = useState<Supplier[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [debtMap, setDebtMap]       = useState<Record<number, number>>({})
 
-  const [showAddForm, setShowAddForm]     = useState(false)
-  const [editingId, setEditingId]         = useState<number | null>(null)
-  const [fName, setFName]                 = useState('')
-  const [fAddress, setFAddress]           = useState('')
-  const [fNpwp, setFNpwp]                 = useState('')
-  const [fPhone, setFPhone]               = useState('')
+  const [showAddForm, setShowAddForm]       = useState(false)
+  const [editingId, setEditingId]           = useState<number | null>(null)
+  const [fName, setFName]                   = useState('')
+  const [fAddress, setFAddress]             = useState('')
+  const [fNpwp, setFNpwp]                   = useState('')
+  const [fPhone, setFPhone]                 = useState('')
   const [savingSupplier, setSavingSupplier] = useState(false)
-  const [supplierMsg, setSupplierMsg]     = useState<{ ok: boolean; text: string } | null>(null)
-  const [salesmanRows, setSalesmanRows]   = useState<SalesmanRow[]>([])
+  const [supplierMsg, setSupplierMsg]       = useState<{ ok: boolean; text: string } | null>(null)
+  const [salesmanRows, setSalesmanRows]     = useState<SalesmanRow[]>([])
 
   const [addSalesmanFor, setAddSalesmanFor] = useState<number | null>(null)
   const [sName, setSName]                   = useState('')
@@ -47,10 +50,23 @@ export default function TabSupplier({ user }: { user: User }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await sb.from('suppliers')
-      .select('id, name, address, npwp, phone, supplier_salesmen(id, supplier_id, name, phone, active)')
-      .order('name')
-    setSuppliers((data ?? []) as Supplier[])
+    const [{ data: supData }, { data: piData }] = await Promise.all([
+      sb.from('suppliers')
+        .select('id, name, address, npwp, phone, supplier_salesmen(id, supplier_id, name, phone, active)')
+        .order('name'),
+      sb.from('purchase_invoices')
+        .select('supplier_id, total, purchase_invoice_payments(amount)')
+        .is('paid_at', null),
+    ])
+    setSuppliers((supData ?? []) as Supplier[])
+
+    const map: Record<number, number> = {}
+    for (const pi of (piData ?? []) as any[]) {
+      const paid      = (pi.purchase_invoice_payments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0)
+      const remaining = Math.max(0, Number(pi.total) - paid)
+      if (remaining > 0) map[pi.supplier_id] = (map[pi.supplier_id] ?? 0) + remaining
+    }
+    setDebtMap(map)
     setLoading(false)
   }, [sb])
 
@@ -185,6 +201,7 @@ export default function TabSupplier({ user }: { user: User }) {
             const activeSalesmen   = s.supplier_salesmen.filter(sm => sm.active)
             const inactiveSalesmen = s.supplier_salesmen.filter(sm => !sm.active)
             const isEditing        = editingId === s.id
+            const debt             = debtMap[s.id] ?? 0
 
             return (
               <div key={s.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
@@ -207,16 +224,23 @@ export default function TabSupplier({ user }: { user: User }) {
                     <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-gray-900 font-semibold text-base">{s.name}</p>
-                        {s.npwp && <p className="text-gray-500 text-sm mt-0.5">NPWP: {s.npwp}</p>}
-                        {s.phone && <p className="text-gray-500 text-sm mt-0.5">Telp: {s.phone}</p>}
+                        {s.npwp    && <p className="text-gray-500 text-sm mt-0.5">NPWP: {s.npwp}</p>}
+                        {s.phone   && <p className="text-gray-500 text-sm mt-0.5">Telp: {s.phone}</p>}
                         {s.address && <p className="text-gray-500 text-sm mt-0.5">{s.address}</p>}
                       </div>
-                      <button
-                        onClick={() => openEdit(s)}
-                        className="text-gray-500 hover:text-gray-700 text-sm shrink-0 transition-colors"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        {debt > 0 ? (
+                          <span className="text-red-600 text-sm font-semibold">{fmtRp(debt)}</span>
+                        ) : (
+                          <span className="text-green-600 text-xs font-medium">Lunas</span>
+                        )}
+                        <button
+                          onClick={() => openEdit(s)}
+                          className="text-gray-500 hover:text-gray-700 text-sm transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
                     </div>
 
                     <div className="border-t border-gray-200 px-4 py-3">

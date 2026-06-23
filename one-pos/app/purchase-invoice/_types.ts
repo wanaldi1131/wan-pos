@@ -42,6 +42,7 @@ export type PiRecord = {
   code: string
   invoice_date: string
   due_date: string | null
+  paid_at: string | null
   note: string | null
   subtotal: number
   discount_amount: number

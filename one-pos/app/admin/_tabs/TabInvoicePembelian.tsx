@@ -19,6 +19,7 @@ export default function TabInvoicePembelian({ user }: { user: User }) {
   const [pis, setPis]               = useState<PiRecord[]>([])
   const [loadingPis, setLoadingPis] = useState(false)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [markingPaid, setMarkingPaid] = useState<number | null>(null)
 
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
 
@@ -36,7 +37,7 @@ export default function TabInvoicePembelian({ user }: { user: User }) {
     setLoadingPis(true)
     const { data } = await sb.from('purchase_invoices')
       .select(`
-        id, code, invoice_date, due_date, note,
+        id, code, invoice_date, due_date, paid_at, note,
         subtotal, discount_amount, total,
         supplier:suppliers!supplier_id(name),
         gr:goods_receipts!goods_receipt_id(code),
@@ -62,6 +63,13 @@ export default function TabInvoicePembelian({ user }: { user: User }) {
     loadRef()
     setFDate(new Date().toISOString().split('T')[0])
   }, [loadPis, loadRef])
+
+  async function markAsPaid(piId: number) {
+    setMarkingPaid(piId)
+    await sb.from('purchase_invoices').update({ paid_at: new Date().toISOString() }).eq('id', piId)
+    setMarkingPaid(null)
+    loadPis()
+  }
 
   function updateRow(rowId: string, patch: Partial<InvoiceItemRow>) {
     setItems(prev => prev.map(r => r.rowId === rowId ? { ...r, ...patch } : r))
@@ -298,17 +306,23 @@ export default function TabInvoicePembelian({ user }: { user: User }) {
             <p className="text-center text-gray-500 py-12 text-base">Belum ada invoice pembelian.</p>
           ) : (
             pis.map(pi => {
-              const isOpen = expandedId === pi.id
+              const isOpen  = expandedId === pi.id
+              const isPaid  = !!pi.paid_at
               return (
-                <div key={pi.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                <div key={pi.id} className={`bg-white border rounded-2xl overflow-hidden ${isPaid ? 'border-green-200' : 'border-gray-200'}`}>
                   <button onClick={() => setExpandedId(isOpen ? null : pi.id)}
                     className="w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-gray-50 transition-colors">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-gray-900 text-base font-semibold">{pi.code}</span>
+                        {isPaid ? (
+                          <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">LUNAS</span>
+                        ) : (
+                          <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">BELUM LUNAS</span>
+                        )}
                         {pi.gr && <span className="text-gray-500 text-sm">dari {pi.gr.code}</span>}
                         <span className="text-gray-500 text-sm">{fmtDate(pi.invoice_date)}</span>
-                        {pi.due_date && (
+                        {!isPaid && pi.due_date && (
                           <span className="text-amber-600 text-sm">jatuh tempo {fmtDate(pi.due_date)}</span>
                         )}
                       </div>
@@ -361,6 +375,17 @@ export default function TabInvoicePembelian({ user }: { user: User }) {
                           </tr>
                         </tfoot>
                       </table>
+                      {!isPaid && (
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            onClick={() => markAsPaid(pi.id)}
+                            disabled={markingPaid === pi.id}
+                            className="bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                          >
+                            {markingPaid === pi.id ? 'Menyimpan…' : '✓ Tandai Lunas'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

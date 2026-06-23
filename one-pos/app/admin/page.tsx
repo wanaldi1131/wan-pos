@@ -10,13 +10,14 @@ import TabKasTunai         from './_tabs/TabKasTunai'
 import TabKategori         from './_tabs/TabKategori'
 import TabProduk           from './_tabs/TabProduk'
 import TabKasir            from './_tabs/TabKasir'
-import TabSupplier         from './_tabs/TabSupplier'
-import TabPenerimaan       from './_tabs/TabPenerimaan'
-import TabReturSupplier    from './_tabs/TabReturSupplier'
-import TabInvoicePembelian from './_tabs/TabInvoicePembelian'
+import TabSupplier              from './_tabs/TabSupplier'
+import TabPenerimaan            from './_tabs/TabPenerimaan'
+import TabReturSupplier         from './_tabs/TabReturSupplier'
+import TabInvoicePembelian      from './_tabs/TabInvoicePembelian'
+import TabPembayaranInvoice     from './_tabs/TabPembayaranInvoice'
 
 type Tab = 'antaran' | 'belum_lunas' | 'pendapatan' | 'kas_tunai' | 'produk' | 'kategori' | 'kasir'
-         | 'supplier' | 'penerimaan' | 'retur_supplier' | 'invoice_pembelian'
+         | 'supplier' | 'penerimaan' | 'retur_supplier' | 'invoice_pembelian' | 'pembayaran_invoice'
 
 export default function AdminPage() {
   const sb = createClient()
@@ -58,10 +59,11 @@ export default function AdminPage() {
     ...(isAdmin ? [
       { v: 'produk'            as Tab, label: 'Produk' },
       { v: 'kategori'          as Tab, label: 'Kategori' },
-      { v: 'supplier'          as Tab, label: 'Supplier' },
-      { v: 'penerimaan'        as Tab, label: 'Penerimaan Barang' },
-      { v: 'retur_supplier'    as Tab, label: 'Retur Supplier' },
-      { v: 'invoice_pembelian' as Tab, label: 'Invoice Pembelian' },
+      { v: 'supplier'             as Tab, label: 'Supplier' },
+      { v: 'penerimaan'           as Tab, label: 'Penerimaan Barang' },
+      { v: 'retur_supplier'       as Tab, label: 'Retur Supplier' },
+      { v: 'invoice_pembelian'    as Tab, label: 'Invoice Pembelian' },
+      { v: 'pembayaran_invoice'   as Tab, label: 'Pembayaran Invoice' },
     ] : []),
     { v: 'kasir', label: 'Kasir' },
   ]
@@ -100,10 +102,11 @@ export default function AdminPage() {
           {tab === 'kategori'         && <TabKategori         user={user} />}
           {tab === 'produk'           && <TabProduk           user={user} />}
           {tab === 'kasir'            && <TabKasir            user={user} />}
-          {tab === 'supplier'         && <TabSupplier         user={user} />}
-          {tab === 'penerimaan'       && <TabPenerimaan       user={user} />}
-          {tab === 'retur_supplier'   && <TabReturSupplier    user={user} />}
-          {tab === 'invoice_pembelian'&& <TabInvoicePembelian user={user} />}
+          {tab === 'supplier'          && <TabSupplier          user={user} />}
+          {tab === 'penerimaan'        && <TabPenerimaan        user={user} />}
+          {tab === 'retur_supplier'    && <TabReturSupplier     user={user} />}
+          {tab === 'invoice_pembelian' && <TabInvoicePembelian  user={user} />}
+          {tab === 'pembayaran_invoice'&& <TabPembayaranInvoice user={user} />}
         </div>
       </div>
     </div>

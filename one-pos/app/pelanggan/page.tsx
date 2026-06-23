@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -168,24 +168,24 @@ export default function PelangganPage() {
   // ── Render ──────────────────────────────────────────────────
   if (loadingUser) {
     return (
-      <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
-        <span className="text-gray-500 text-sm">Memuat…</span>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <span className="text-gray-500 text-base">Memuat…</span>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] text-white pb-24">
+    <div className="min-h-screen bg-gray-50 text-gray-900 pb-24">
 
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-[#0f0f0f]/95 backdrop-blur border-b border-white/8 px-4 py-3 flex items-center gap-3">
-        <a href="/" className="text-gray-500 hover:text-white transition-colors text-sm">← POS</a>
-        <span className="text-white/15">|</span>
-        <h1 className="text-white font-semibold text-sm">Daftar Customer</h1>
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+        <a href="/" className="text-gray-500 hover:text-gray-900 transition-colors text-base">← POS</a>
+        <span className="text-gray-400">|</span>
+        <h1 className="text-gray-900 font-semibold text-base">Daftar Customer</h1>
         <div className="flex-1" />
         <button
           onClick={openAdd}
-          className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+          className="bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white text-base font-medium px-3 py-1.5 rounded-lg transition-colors"
         >
           + Tambah
         </button>
@@ -199,56 +199,56 @@ export default function PelangganPage() {
           placeholder="Cari nama customer…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-indigo-500 mb-4"
+          className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 placeholder-gray-400 text-base focus:outline-none focus:border-orange-500 mb-4"
         />
 
         {/* Form */}
         {showForm && (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
-            <h2 className="text-white font-semibold text-sm mb-4">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
+            <h2 className="text-gray-900 font-semibold text-base mb-4">
               {editing ? 'Edit Customer' : 'Tambah Customer Baru'}
             </h2>
 
-            <label className="block text-xs text-gray-400 mb-1">Nama *</label>
+            <label className="block text-sm text-gray-500 mb-1">Nama *</label>
             <input
               type="text"
               value={fName}
               onChange={e => setFName(e.target.value)}
               placeholder="Nama customer"
               autoFocus
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500 mb-3"
+              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3"
             />
 
-            <label className="block text-xs text-gray-400 mb-1">No. HP</label>
+            <label className="block text-sm text-gray-500 mb-1">No. HP</label>
             <input
               type="tel"
               value={fPhone}
               onChange={e => setFPhone(e.target.value)}
               placeholder="081234567890"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500 mb-3"
+              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3"
             />
 
-            <label className="block text-xs text-gray-400 mb-1">Alamat</label>
+            <label className="block text-sm text-gray-500 mb-1">Alamat</label>
             <textarea
               value={fAddress}
               onChange={e => setFAddress(e.target.value)}
               placeholder="Alamat lengkap"
               rows={2}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500 mb-3 resize-none"
+              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3 resize-none"
             />
 
             {/* Kategori */}
-            <label className="block text-xs text-gray-400 mb-2">Kategori</label>
+            <label className="block text-sm text-gray-500 mb-2">Kategori</label>
             {isAdmin ? (
               <div className="flex gap-2 mb-4">
                 {(['retail', 'toko'] as const).map(cat => (
                   <button
                     key={cat}
                     onClick={() => setFCategory(cat)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    className={`flex-1 py-2 rounded-lg text-base font-medium border transition-colors ${
                       fCategory === cat
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'
+                        ? 'bg-orange-600 border-orange-500 text-white'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
                     }`}
                   >
                     {cat === 'toko' ? 'Toko' : 'Retail'}
@@ -257,14 +257,14 @@ export default function PelangganPage() {
               </div>
             ) : (
               <div className="mb-4">
-                <span className="inline-block text-sm text-blue-400 bg-blue-500/15 border border-blue-500/20 rounded-lg px-3 py-1.5">
+                <span className="inline-block text-base text-blue-400 bg-blue-500/15 border border-blue-500/20 rounded-lg px-3 py-1.5">
                   Retail
                 </span>
               </div>
             )}
 
             {formMsg && (
-              <p className={`text-xs mb-3 ${formMsg.ok ? 'text-green-400' : 'text-red-400'}`}>
+              <p className={`text-sm mb-3 ${formMsg.ok ? 'text-green-600' : 'text-red-600'}`}>
                 {formMsg.text}
               </p>
             )}
@@ -272,14 +272,14 @@ export default function PelangganPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowForm(false)}
-                className="flex-1 py-2 rounded-lg text-sm border border-white/10 text-gray-400 hover:text-white hover:border-white/20 transition-colors"
+                className="flex-1 py-2 rounded-lg text-base border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300 transition-colors"
               >
                 Batal
               </button>
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex-1 py-2 rounded-lg text-sm bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors disabled:opacity-50"
+                className="flex-1 py-2 rounded-lg text-base bg-orange-600 hover:bg-orange-500 text-white font-medium transition-colors disabled:opacity-50"
               >
                 {saving ? 'Menyimpan…' : 'Simpan'}
               </button>
@@ -289,37 +289,37 @@ export default function PelangganPage() {
 
         {/* List */}
         {loadingCusts ? (
-          <p className="text-center text-gray-600 py-12 text-sm">Memuat…</p>
+          <p className="text-center text-gray-500 py-12 text-base">Memuat…</p>
         ) : customers.length === 0 ? (
-          <p className="text-center text-gray-600 py-12 text-sm">
+          <p className="text-center text-gray-500 py-12 text-base">
             {search ? 'Tidak ada customer yang cocok.' : 'Belum ada customer.'}
           </p>
         ) : (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-gray-100">
             {customers.map(c => (
               <div key={c.id} className="py-3 flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-white text-sm font-medium">{c.name}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${
+                    <span className="text-gray-900 text-base font-medium">{c.name}</span>
+                    <span className={`text-sm px-1.5 py-0.5 rounded font-medium shrink-0 ${
                       c.category === 'toko'
-                        ? 'bg-amber-500/20 text-amber-400'
+                        ? 'bg-amber-500/20 text-amber-600'
                         : 'bg-blue-500/20 text-blue-400'
                     }`}>
                       {c.category === 'toko' ? 'Toko' : 'Retail'}
                     </span>
                   </div>
                   {c.phone && (
-                    <p className="text-gray-500 text-xs mt-0.5">{c.phone}</p>
+                    <p className="text-gray-500 text-sm mt-0.5">{c.phone}</p>
                   )}
                   {c.address && (
-                    <p className="text-gray-600 text-xs mt-0.5 truncate">{c.address}</p>
+                    <p className="text-gray-500 text-sm mt-0.5 truncate">{c.address}</p>
                   )}
                 </div>
                 {isAdmin && (
                   <button
                     onClick={() => openEdit(c)}
-                    className="text-gray-600 hover:text-gray-300 text-xs shrink-0 transition-colors pt-0.5"
+                    className="text-gray-500 hover:text-gray-700 text-sm shrink-0 transition-colors pt-0.5"
                   >
                     Edit
                   </button>
@@ -332,7 +332,7 @@ export default function PelangganPage() {
         {/* Infinite scroll sentinel */}
         <div ref={sentinelRef} className="h-10 flex items-center justify-center mt-2">
           {loadingMore && (
-            <span className="text-gray-600 text-xs">Memuat lebih banyak…</span>
+            <span className="text-gray-500 text-sm">Memuat lebih banyak…</span>
           )}
         </div>
 

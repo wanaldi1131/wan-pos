@@ -2,105 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { User } from '@supabase/supabase-js'
-
-// ── Types ──────────────────────────────────────────────────────
-
-type Sale = {
-  id: number
-  code: string
-  cashier_id: string
-  customer_id: number | null
-  fulfillment: 'ambil' | 'antar'
-  pay_method: string
-  pay_status: string
-  total: number
-  created_at: string
-  kasir_name?: string
-  customer_name?: string
-}
-
-type SaleItem = {
-  id: number
-  product_id: number
-  unit_id: number
-  product_name: string
-  unit_name: string
-  factor_to_base: number
-  qty: number
-  unit_price: number
-  subtotal: number
-}
-
-// Item yang bisa diretur (setelah dikurangi yang sudah diretur sebelumnya)
-type ReturnableItem = {
-  sale_item_id: number
-  product_id: number
-  product_name: string
-  unit_name: string
-  unit_price: number
-  factor_to_base: number
-  qty: number             // qty asli
-  already_returned: number
-  max_qty: number         // qty - already_returned
-}
-
-type Filter    = 'today' | 'week' | 'all'
-type PayFilter = 'all' | 'lunas' | 'belum'
-
-// ── Constants & helpers ────────────────────────────────────────
-
-const PAGE_SIZE = 30
-
-const rp = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-
-const fmtQty = (n: number) =>
-  Number.isInteger(n) ? String(n) : n.toLocaleString('id-ID', { maximumFractionDigits: 4 })
-
-const PAY_LABEL: Record<string, string> = {
-  tunai: 'Tunai', transfer: 'Transfer', cod: 'COD', kredit: 'Kredit',
-}
-
-async function enrichSales(sb: SupabaseClient, rows: any[]): Promise<Sale[]> {
-  if (rows.length === 0) return []
-  const cashierIds = [...new Set(rows.map((s: any) => s.cashier_id))]
-  const custIds    = rows.filter((s: any) => s.customer_id).map((s: any) => s.customer_id as number)
-
-  const [{ data: profiles }, { data: customers }] = await Promise.all([
-    sb.from('profiles').select('id, full_name').in('id', cashierIds),
-    custIds.length > 0
-      ? sb.from('customers').select('id, name').in('id', custIds)
-      : Promise.resolve({ data: [] }),
-  ])
-
-  return rows.map((s: any) => ({
-    ...s,
-    kasir_name:    (profiles ?? []).find((p: any) => p.id === s.cashier_id)?.full_name ?? '—',
-    customer_name: (customers ?? []).find((c: any) => String(c.id) === String(s.customer_id))?.name,
-  }))
-}
-
-function buildQuery(sb: SupabaseClient, filter: Filter, payFilter: PayFilter) {
-  let q = sb
-    .from('sales')
-    .select('id, code, cashier_id, customer_id, fulfillment, pay_method, pay_status, total, created_at')
-    .order('created_at', { ascending: false })
-
-  if (filter === 'today') {
-    const d     = new Date()
-    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString()
-    const end   = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).toISOString()
-    q = q.gte('created_at', start).lt('created_at', end)
-  } else if (filter === 'week') {
-    q = q.gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-  }
-
-  if (payFilter !== 'all') q = q.eq('pay_status', payFilter)
-  return q
-}
-
-// ── Component ──────────────────────────────────────────────────
+import type { Sale, SaleItem, Filter, PayFilter } from './_types'
+import { PAGE_SIZE, rp, fmtQty, PAY_LABEL, enrichSales, buildQuery } from './_helpers'
+import { ReturPanel } from './_components/ReturPanel'
 
 export default function HistoryPage() {
   const [user, setUser]       = useState<User | null | undefined>(undefined)
@@ -122,18 +27,10 @@ export default function HistoryPage() {
   const [returnsCache, setReturnsCache] = useState<Record<number, number>>({})
   const [loadingItems, setLoadingItems] = useState(false)
 
-  // ── Retur state ───────────────────────────────────────────────
-  const [returningId, setReturningId]         = useState<number | null>(null)
-  const [returnableItems, setReturnableItems] = useState<ReturnableItem[]>([])
-  const [returnQtys, setReturnQtys]           = useState<Record<number, number>>({})
-  const [returnNote, setReturnNote]           = useState('')
-  const [returnRefundMethod, setReturnRefundMethod] = useState<'tunai' | 'transfer' | 'nota'>('tunai')
-  const [loadingReturn, setLoadingReturn]     = useState(false)
-  const [submittingReturn, setSubmittingReturn] = useState(false)
-  const [returnSuccess, setReturnSuccess]     = useState<string | null>(null)
-  const [returnError, setReturnError]         = useState<string | null>(null)
+  const [returningId, setReturningId]   = useState<number | null>(null)
+  const [returnSuccess, setReturnSuccess] = useState<string | null>(null)
 
-  // ── Auth ──────────────────────────────────────────────────────
+  // ── Auth ─────────────────────────────────────────────────────
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data }) => setUser(data.user ?? null))
@@ -233,7 +130,7 @@ export default function HistoryPage() {
   async function toggleDetail(saleId: number) {
     if (expandedId === saleId) {
       setExpandedId(null)
-      cancelRetur()
+      setReturningId(null)
       return
     }
 
@@ -252,7 +149,6 @@ export default function HistoryPage() {
         .eq('sale_id', saleId),
     ])
 
-    // Simpan total diretur
     const totalReturned = (saleReturns ?? []).reduce((s, r) => s + Number(r.total), 0)
     setReturnsCache(c => ({ ...c, [saleId]: totalReturned }))
 
@@ -287,104 +183,10 @@ export default function HistoryPage() {
     setLoadingItems(false)
   }
 
-  // ── Retur helpers ─────────────────────────────────────────────
-
-  function cancelRetur() {
+  function handleReturSuccess(saleId: number, total: number) {
     setReturningId(null)
-    setReturnableItems([])
-    setReturnQtys({})
-    setReturnNote('')
-    setReturnRefundMethod('tunai')
-    setReturnError(null)
-  }
-
-  async function startRetur(saleId: number) {
-    const items = itemsCache[saleId]
-    if (!items || items.length === 0) return
-
-    setReturningId(saleId)
-    setReturnQtys({})
-    setReturnNote('')
-    setLoadingReturn(true)
-
-    const sb = createClient()
-    const saleItemIds = items.map(i => i.id)
-
-    // Cari qty yang sudah diretur sebelumnya per item
-    const { data: prevReturns } = await sb
-      .from('return_items')
-      .select('sale_item_id, qty')
-      .in('sale_item_id', saleItemIds)
-
-    const returnedMap: Record<number, number> = {}
-    for (const r of prevReturns ?? []) {
-      returnedMap[r.sale_item_id] = (returnedMap[r.sale_item_id] ?? 0) + Number(r.qty)
-    }
-
-    const list: ReturnableItem[] = items
-      .map(item => {
-        const already  = returnedMap[item.id] ?? 0
-        const max_qty  = Number(item.qty) - already
-        return {
-          sale_item_id:    item.id,
-          product_id:      item.product_id,
-          product_name:    item.product_name,
-          unit_name:       item.unit_name,
-          unit_price:      item.unit_price,
-          factor_to_base:  item.factor_to_base,
-          qty:             Number(item.qty),
-          already_returned: already,
-          max_qty,
-        }
-      })
-      .filter(i => i.max_qty > 0)  // sembunyikan item yang sudah full-retur
-
-    setReturnableItems(list)
-    setLoadingReturn(false)
-  }
-
-  async function confirmRetur(saleId: number) {
-    const toReturn = returnableItems.filter(i => (returnQtys[i.sale_item_id] ?? 0) > 0)
-    if (toReturn.length === 0 || !user) return
-
-    // Validasi client-side sebelum kirim ke server
-    const overLimit = toReturn.find(i => {
-      const qty = returnQtys[i.sale_item_id] ?? 0
-      return qty > i.max_qty
-    })
-    if (overLimit) {
-      setReturnError(`Qty retur "${overLimit.product_name}" melebihi batas (maks ${overLimit.max_qty} ${overLimit.unit_name})`)
-      return
-    }
-
-    setSubmittingReturn(true)
-    setReturnError(null)
-
-    const { data, error } = await createClient().rpc('confirm_return', {
-      p_sale_id:       saleId,
-      p_cashier_id:    user.id,
-      p_refund_method: returnRefundMethod,
-      p_note:          returnNote || null,
-      p_items:         toReturn.map(i => ({
-        sale_item_id: i.sale_item_id,
-        qty:          returnQtys[i.sale_item_id]!,
-      })),
-    })
-
-    setSubmittingReturn(false)
-
-    if (error || !data) {
-      // Pesan error dari server (misal: qty melebihi sisa retur)
-      const msg = error?.message ?? 'Gagal menyimpan retur'
-      setReturnError(msg.includes('Qty retur') ? msg : 'Gagal menyimpan retur. Coba lagi.')
-      return
-    }
-
-    const total = Number((data as { total: number }).total)
-    cancelRetur()
     setReturnSuccess(`Retur ${rp(total)} berhasil dicatat`)
     setTimeout(() => setReturnSuccess(null), 4000)
-    // Invalidate cache agar data retur fresh saat dibuka lagi
     setItemsCache(c => { const copy = { ...c }; delete copy[saleId]; return copy })
     setReturnsCache(c => { const copy = { ...c }; delete copy[saleId]; return copy })
   }
@@ -393,7 +195,7 @@ export default function HistoryPage() {
 
   if (user === undefined || user === null) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-500">Memuat...</p>
       </div>
     )
@@ -406,25 +208,25 @@ export default function HistoryPage() {
   // ── UI ────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col select-none">
+    <div className="min-h-screen bg-gray-50 flex flex-col select-none">
 
       {/* Top bar */}
-      <div className="flex items-center px-4 py-3 bg-gray-900 border-b border-white/10 shrink-0 gap-4">
-        <a href="/" className="text-gray-400 hover:text-white text-sm font-medium transition-colors">
+      <div className="flex items-center px-4 py-3 bg-white border-b border-gray-200 shrink-0 gap-4">
+        <a href="/" className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">
           ← POS
         </a>
-        <span className="text-white font-bold text-base flex-1">Riwayat Transaksi</span>
+        <span className="text-gray-900 font-bold text-base flex-1">Riwayat Transaksi</span>
       </div>
 
       {/* Filter + ringkasan */}
-      <div className="flex flex-col gap-2 px-4 py-3 bg-gray-900/50 border-b border-white/10 shrink-0">
+      <div className="flex flex-col gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           {(['today', 'week', 'all'] as Filter[]).map(f => (
             <button
               key={f}
               onClick={() => { setFilter(f); setSearch('') }}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                filter === f ? 'bg-indigo-600 text-white' : 'bg-white/8 text-gray-400 hover:bg-white/15'
+              className={`px-4 py-2 rounded-xl text-base font-semibold transition-colors ${
+                filter === f ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
               {f === 'today' ? 'Hari Ini' : f === 'week' ? '7 Hari' : 'Semua'}
@@ -432,8 +234,8 @@ export default function HistoryPage() {
           ))}
           {!loading && displayed.length > 0 && (
             <div className="ml-auto flex items-center gap-3">
-              <span className="text-gray-500 text-sm">{displayed.length}{hasMore && !trimmed ? '+' : ''} transaksi</span>
-              <span className="text-white font-bold text-base">{rp(grandTotal)}</span>
+              <span className="text-gray-500 text-base">{displayed.length}{hasMore && !trimmed ? '+' : ''} transaksi</span>
+              <span className="text-gray-900 font-bold text-base">{rp(grandTotal)}</span>
             </div>
           )}
         </div>
@@ -442,12 +244,12 @@ export default function HistoryPage() {
             <button
               key={val}
               onClick={() => setPayFilter(val)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
                 payFilter === val
-                  ? val === 'lunas' ? 'bg-green-600/30 text-green-300 ring-1 ring-green-500/50'
-                  : val === 'belum' ? 'bg-amber-600/30 text-amber-300 ring-1 ring-amber-500/50'
-                  :                   'bg-white/15 text-white'
-                  : 'bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300'
+                  ? val === 'lunas' ? 'bg-green-100 text-green-700 ring-1 ring-green-400'
+                  : val === 'belum' ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400'
+                  :                   'bg-gray-200 text-gray-900'
+                  : 'bg-white text-gray-500 hover:bg-gray-100 hover:text-gray-700'
               }`}
             >
               {label}
@@ -460,33 +262,29 @@ export default function HistoryPage() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="max-w-2xl mx-auto space-y-2">
           <input
-            className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-600 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full bg-white border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl px-4 py-2.5 text-base outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             placeholder="Cari nomor invoice atau nama pelanggan..."
             value={search}
             onChange={e => { setSearch(e.target.value); setExpandedId(null) }}
           />
 
           {loading ? (
-            <p className="text-gray-500 text-center mt-12 text-sm">Memuat...</p>
+            <p className="text-gray-500 text-center mt-12 text-base">Memuat...</p>
           ) : searchLoading ? (
             <div className="text-center mt-12 space-y-2">
-              <p className="text-gray-500 text-sm">Mencari di semua data...</p>
-              <p className="text-gray-700 text-xs">Mungkin perlu beberapa detik</p>
+              <p className="text-gray-500 text-base">Mencari di semua data...</p>
+              <p className="text-gray-700 text-sm">Mungkin perlu beberapa detik</p>
             </div>
           ) : displayed.length === 0 ? (
-            <p className="text-gray-600 text-center mt-12 text-sm">
+            <p className="text-gray-500 text-center mt-12 text-base">
               {trimmed ? `Tidak ditemukan: "${search}"` : 'Belum ada transaksi'}
             </p>
           ) : (
             <>
               {displayed.map(sale => {
-                const isOpen    = expandedId === sale.id
-                const items     = itemsCache[sale.id]
-                const isRetur   = returningId === sale.id
-                const returTotal = returnableItems.reduce(
-                  (s, i) => s + (returnQtys[i.sale_item_id] ?? 0) * i.unit_price, 0
-                )
-                const hasAnyRetur = returnableItems.some(i => (returnQtys[i.sale_item_id] ?? 0) > 0)
+                const isOpen  = expandedId === sale.id
+                const items   = itemsCache[sale.id]
+                const isRetur = returningId === sale.id
 
                 return (
                   <div
@@ -494,9 +292,9 @@ export default function HistoryPage() {
                     className={`border rounded-2xl transition-colors ${
                       isOpen
                         ? isRetur
-                          ? 'bg-gray-900 border-amber-500/40'
-                          : 'bg-gray-900 border-indigo-500/40'
-                        : 'bg-white/5 border-white/10 hover:border-white/20'
+                          ? 'bg-amber-50 border-amber-400'
+                          : 'bg-orange-50 border-orange-300'
+                        : 'bg-white border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     {/* Header */}
@@ -504,20 +302,20 @@ export default function HistoryPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="text-white font-mono text-sm font-bold">{sale.code}</span>
+                            <span className="text-gray-900 font-mono text-base font-bold">{sale.code}</span>
                             <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
                               sale.pay_status === 'lunas'
-                                ? 'bg-green-500/20 text-green-400'
-                                : 'bg-amber-500/20 text-amber-400'
+                                ? 'bg-green-500/20 text-green-600'
+                                : 'bg-amber-500/20 text-amber-600'
                             }`}>{sale.pay_status}</span>
-                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-white/10 text-gray-400">
+                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-white/10 text-gray-500">
                               {PAY_LABEL[sale.pay_method] ?? sale.pay_method}
                             </span>
                             {sale.fulfillment === 'antar' && (
                               <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-400">Antar</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5 text-gray-500 text-xs flex-wrap">
+                          <div className="flex items-center gap-1.5 text-gray-500 text-sm flex-wrap">
                             <span>
                               {new Date(sale.created_at).toLocaleString('id-ID', {
                                 day: '2-digit', month: 'short', year: 'numeric',
@@ -530,193 +328,74 @@ export default function HistoryPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-white font-bold text-base">{rp(sale.total)}</span>
-                          <span className="text-gray-500 text-xs">{isOpen ? '▲' : '▼'}</span>
+                          <span className="text-gray-900 font-bold text-base">{rp(sale.total)}</span>
+                          <span className="text-gray-500 text-sm">{isOpen ? '▲' : '▼'}</span>
                         </div>
                       </div>
                     </button>
 
                     {/* Detail / Retur panel */}
                     {isOpen && (
-                      <div className="border-t border-white/10 px-4 pb-4">
+                      <div className="border-t border-gray-200 px-4 pb-4">
 
-                        {/* Success banner */}
-                        {returnSuccess && (
-                          <div className="mt-3 px-4 py-2.5 rounded-xl bg-green-500/15 border border-green-500/30 text-green-400 text-sm font-medium">
+                        {returnSuccess && expandedId === sale.id && (
+                          <div className="mt-3 px-4 py-2.5 rounded-xl bg-green-500/15 border border-green-500/30 text-green-600 text-base font-medium">
                             ✓ {returnSuccess}
                           </div>
                         )}
 
-                        {/* Error banner */}
-                        {returnError && isRetur && (
-                          <div className="mt-3 px-4 py-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-sm flex items-start justify-between gap-2">
-                            <span>{returnError}</span>
-                            <button onClick={() => setReturnError(null)} className="shrink-0 opacity-60 hover:opacity-100 text-xs mt-0.5">✕</button>
-                          </div>
-                        )}
-
                         {loadingItems && !items ? (
-                          <p className="text-gray-500 text-xs text-center py-3">Memuat item...</p>
+                          <p className="text-gray-500 text-sm text-center py-3">Memuat item...</p>
                         ) : !items || items.length === 0 ? (
-                          <p className="text-gray-600 text-xs text-center py-3">Tidak ada item</p>
+                          <p className="text-gray-500 text-sm text-center py-3">Tidak ada item</p>
 
                         ) : isRetur ? (
-                          /* ── MODE RETUR ── */
-                          <div className="mt-3 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <p className="text-amber-400 text-xs font-bold uppercase tracking-wide">Pilih Item & Qty Retur</p>
-                              <button
-                                onClick={cancelRetur}
-                                className="text-gray-500 hover:text-white text-xs"
-                              >✕ Batal</button>
-                            </div>
-
-                            {loadingReturn ? (
-                              <p className="text-gray-500 text-xs text-center py-3">Memuat data retur...</p>
-                            ) : returnableItems.length === 0 ? (
-                              <p className="text-gray-600 text-xs text-center py-3">Semua item sudah diretur</p>
-                            ) : (
-                              <>
-                                <div className="divide-y divide-white/5">
-                                  {returnableItems.map(item => {
-                                    const qty = returnQtys[item.sale_item_id] ?? 0
-                                    const setQty = (v: number) => setReturnQtys(prev => ({
-                                      ...prev,
-                                      [item.sale_item_id]: Math.max(0, Math.min(v, item.max_qty)),
-                                    }))
-                                    return (
-                                      <div key={item.sale_item_id} className="py-3 flex items-center gap-3">
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-white text-sm font-medium truncate">{item.product_name}</p>
-                                          <p className="text-gray-500 text-xs mt-0.5">
-                                            {fmtQty(item.qty)} {item.unit_name}
-                                            {item.already_returned > 0 && (
-                                              <span className="text-amber-600 ml-1.5">· diretur {fmtQty(item.already_returned)}</span>
-                                            )}
-                                            <span className="text-gray-600 ml-1.5">· maks {fmtQty(item.max_qty)}</span>
-                                          </p>
-                                        </div>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                          <button
-                                            onClick={() => setQty(qty - 1)}
-                                            className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm flex items-center justify-center"
-                                          >−</button>
-                                          <input
-                                            type="number"
-                                            inputMode="decimal"
-                                            min={0}
-                                            max={item.max_qty}
-                                            step="any"
-                                            value={qty === 0 ? '' : qty}
-                                            placeholder="0"
-                                            onChange={e => {
-                                              const v = parseFloat(e.target.value)
-                                              setQty(isNaN(v) ? 0 : v)
-                                            }}
-                                            onFocus={e => e.target.select()}
-                                            className="w-16 text-white text-sm text-center bg-white/10 border border-white/15 focus:border-amber-500 rounded-lg h-7 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                          />
-                                          <button
-                                            onClick={() => setQty(qty + 1)}
-                                            className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm flex items-center justify-center"
-                                          >+</button>
-                                          <span className="text-gray-600 text-xs w-10 text-right">{item.unit_name}</span>
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-
-                                <input
-                                  placeholder="Catatan retur (opsional)…"
-                                  value={returnNote}
-                                  onChange={e => setReturnNote(e.target.value)}
-                                  className="w-full bg-white/5 border border-white/10 focus:border-amber-500 text-white placeholder-gray-600 rounded-xl px-3 py-2 text-sm outline-none"
-                                />
-
-                                {/* Metode refund */}
-                                <div>
-                                  <p className="text-gray-600 text-xs mb-1.5">Kembalikan via</p>
-                                  <div className="flex gap-2">
-                                    {([
-                                      ['tunai',    'Tunai'],
-                                      ['transfer', 'Transfer'],
-                                      ['nota',     'Nota/Kredit'],
-                                    ] as const).map(([val, label]) => (
-                                      <button
-                                        key={val}
-                                        onClick={() => setReturnRefundMethod(val)}
-                                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                                          returnRefundMethod === val
-                                            ? 'bg-amber-600 text-white'
-                                            : 'bg-white/8 text-gray-400 hover:bg-white/15'
-                                        }`}
-                                      >
-                                        {label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  {returnRefundMethod !== 'tunai' && (
-                                    <p className="text-gray-600 text-xs mt-1">
-                                      Tidak mempengaruhi saldo kas harian
-                                    </p>
-                                  )}
-                                </div>
-
-                                <button
-                                  onClick={() => confirmRetur(sale.id)}
-                                  disabled={!hasAnyRetur || submittingReturn}
-                                  className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-30 text-white text-sm font-bold transition-colors"
-                                >
-                                  {submittingReturn
-                                    ? 'Memproses…'
-                                    : hasAnyRetur
-                                      ? `Konfirmasi Retur · ${rp(returTotal)}`
-                                      : 'Masukkan qty retur'}
-                                </button>
-                              </>
-                            )}
-                          </div>
+                          <ReturPanel
+                            saleId={sale.id}
+                            items={items}
+                            userId={user.id}
+                            onSuccess={(total) => handleReturSuccess(sale.id, total)}
+                            onCancel={() => setReturningId(null)}
+                          />
 
                         ) : (
-                          /* ── MODE NORMAL ── */
                           <>
-                            <table className="w-full mt-3 text-sm">
+                            <table className="w-full mt-3 text-base">
                               <thead>
-                                <tr className="text-gray-600 text-xs uppercase tracking-wide">
+                                <tr className="text-gray-500 text-sm uppercase tracking-wide">
                                   <th className="text-left pb-2 font-medium">Produk</th>
                                   <th className="text-right pb-2 font-medium">Qty</th>
                                   <th className="text-right pb-2 font-medium">Harga</th>
                                   <th className="text-right pb-2 font-medium">Subtotal</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-white/5">
+                              <tbody className="divide-y divide-gray-100">
                                 {items.map(item => (
                                   <tr key={item.id}>
-                                    <td className="py-2 text-white pr-3">{item.product_name}</td>
-                                    <td className="py-2 text-gray-400 text-right whitespace-nowrap">
+                                    <td className="py-2 text-gray-900 pr-3">{item.product_name}</td>
+                                    <td className="py-2 text-gray-500 text-right whitespace-nowrap">
                                       {fmtQty(Number(item.qty))} {item.unit_name}
                                     </td>
-                                    <td className="py-2 text-gray-400 text-right whitespace-nowrap">{rp(item.unit_price)}</td>
-                                    <td className="py-2 text-indigo-300 font-semibold text-right whitespace-nowrap">{rp(item.subtotal)}</td>
+                                    <td className="py-2 text-gray-500 text-right whitespace-nowrap">{rp(item.unit_price)}</td>
+                                    <td className="py-2 text-orange-600 font-semibold text-right whitespace-nowrap">{rp(item.subtotal)}</td>
                                   </tr>
                                 ))}
                               </tbody>
                               <tfoot>
-                                <tr className="border-t border-white/10">
-                                  <td colSpan={3} className="pt-3 text-gray-500 text-xs">Total</td>
-                                  <td className="pt-3 text-white font-bold text-right">{rp(sale.total)}</td>
+                                <tr className="border-t border-gray-200">
+                                  <td colSpan={3} className="pt-3 text-gray-500 text-sm">Total</td>
+                                  <td className="pt-3 text-gray-900 font-bold text-right">{rp(sale.total)}</td>
                                 </tr>
                                 {(returnsCache[sale.id] ?? 0) > 0 && (
                                   <tr>
-                                    <td colSpan={3} className="pt-1.5 text-amber-600 text-xs">Diretur</td>
+                                    <td colSpan={3} className="pt-1.5 text-amber-600 text-sm">Diretur</td>
                                     <td className="pt-1.5 text-amber-500 font-semibold text-right">−{rp(returnsCache[sale.id])}</td>
                                   </tr>
                                 )}
                                 {(returnsCache[sale.id] ?? 0) > 0 && (
                                   <tr>
-                                    <td colSpan={3} className="pt-1 text-gray-500 text-xs">Sisa Efektif</td>
-                                    <td className="pt-1 text-gray-300 font-semibold text-right">{rp(sale.total - returnsCache[sale.id])}</td>
+                                    <td colSpan={3} className="pt-1 text-gray-500 text-sm">Sisa Efektif</td>
+                                    <td className="pt-1 text-gray-400 font-semibold text-right">{rp(sale.total - returnsCache[sale.id])}</td>
                                   </tr>
                                 )}
                               </tfoot>
@@ -724,8 +403,8 @@ export default function HistoryPage() {
 
                             <div className="mt-3 flex justify-end">
                               <button
-                                onClick={() => startRetur(sale.id)}
-                                className="text-xs text-amber-500 hover:text-amber-400 font-medium transition-colors"
+                                onClick={() => setReturningId(sale.id)}
+                                className="text-sm text-amber-500 hover:text-amber-600 font-medium transition-colors"
                               >
                                 Buat Retur →
                               </button>
@@ -738,10 +417,9 @@ export default function HistoryPage() {
                 )
               })}
 
-              {/* Sentinel untuk infinite scroll */}
               {!trimmed && (
                 <div ref={sentinelRef} className="py-4 text-center">
-                  {loadingMore && <p className="text-gray-600 text-xs">Memuat...</p>}
+                  {loadingMore && <p className="text-gray-500 text-sm">Memuat...</p>}
                 </div>
               )}
             </>

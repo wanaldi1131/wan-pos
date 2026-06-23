@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -52,10 +52,10 @@ function StatCard({
   accent: 'neutral' | 'green' | 'blue' | 'red'
 }) {
   const valColor: Record<string, string> = {
-    neutral: 'text-white',
-    green:   'text-green-400',
+    neutral: 'text-gray-900',
+    green:   'text-green-600',
     blue:    'text-blue-400',
-    red:     'text-red-400',
+    red:     'text-red-600',
   }
   const labelColor: Record<string, string> = {
     neutral: 'text-gray-500',
@@ -64,10 +64,10 @@ function StatCard({
     red:     'text-red-600',
   }
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-      <p className={`text-xs ${labelColor[accent]}`}>{label}</p>
+    <div className="bg-white border border-gray-200 rounded-xl p-3">
+      <p className={`text-sm ${labelColor[accent]}`}>{label}</p>
       <p className={`text-base font-bold mt-0.5 ${valColor[accent]}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-sm text-gray-500 mt-0.5">{sub}</p>}
     </div>
   )
 }
@@ -211,27 +211,27 @@ export default function KasPage() {
   const selisih    = actualCash - expectedCash
 
   // ── Shared input style ────────────────────────────────────────
-  const inputCls = 'w-full bg-white/8 border border-white/10 text-white placeholder-gray-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+  const inputCls = 'w-full bg-gray-100 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl px-3 py-2.5 text-base outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500'
 
   // ── Render ───────────────────────────────────────────────────
   if (session === undefined) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <p className="text-gray-500 text-sm">Memuat sesi kas...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-500 text-base">Memuat sesi kas...</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col select-none">
+    <div className="min-h-screen bg-gray-50 flex flex-col select-none">
 
       {/* Header — sama persis dengan halaman Riwayat */}
-      <div className="flex items-center px-4 py-3 bg-gray-900 border-b border-white/10 shrink-0 gap-4">
-        <a href="/" className="text-gray-400 hover:text-white text-sm font-medium transition-colors">
+      <div className="flex items-center px-4 py-3 bg-white border-b border-gray-200 shrink-0 gap-4">
+        <a href="/" className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">
           ← POS
         </a>
-        <span className="text-white font-bold text-base flex-1">Kas Harian</span>
-        <a href="/history" className="text-gray-400 hover:text-white text-sm font-medium transition-colors">
+        <span className="text-gray-900 font-bold text-base flex-1">Kas Harian</span>
+        <a href="/history" className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">
           Riwayat
         </a>
       </div>
@@ -241,25 +241,25 @@ export default function KasPage() {
 
           {/* Error */}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">
+            <div className="bg-red-50 border border-red-500/30 text-red-600 px-4 py-3 rounded-xl text-base">
               {error}
             </div>
           )}
 
           {/* ── Tidak ada sesi aktif ── */}
           {!session && (
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-5">
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center space-y-5">
               <div>
                 <p className="text-4xl mb-3">🏧</p>
-                <h2 className="font-bold text-white text-lg">Belum Ada Sesi Kas</h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <h2 className="font-bold text-gray-900 text-lg">Belum Ada Sesi Kas</h2>
+                <p className="text-base text-gray-500 mt-1">
                   Hitung uang di laci, lalu buka sesi untuk mulai mencatat hari ini.
                 </p>
               </div>
 
               <div className="max-w-xs mx-auto space-y-3 text-left">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1.5">Saldo Awal di Laci (Rp)</label>
+                  <label className="block text-sm text-gray-500 mb-1.5">Saldo Awal di Laci (Rp)</label>
                   <input
                     type="number"
                     value={openingBalance}
@@ -273,7 +273,7 @@ export default function KasPage() {
                 <button
                   onClick={handleOpenSession}
                   disabled={opening}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-50"
+                  className="w-full bg-orange-600 hover:bg-orange-500 text-white rounded-xl py-2.5 text-base font-semibold transition-colors disabled:opacity-50"
                 >
                   {opening ? 'Membuka sesi...' : 'Buka Sesi Kas'}
                 </button>
@@ -285,12 +285,12 @@ export default function KasPage() {
           {session && (
             <>
               {/* Info sesi */}
-              <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center justify-between">
+              <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-gray-600">Sesi dibuka pukul</p>
-                  <p className="text-sm font-medium text-white">{fmtDateTime(session.opened_at)}</p>
+                  <p className="text-sm text-gray-500">Sesi dibuka pukul</p>
+                  <p className="text-base font-medium text-gray-900">{fmtDateTime(session.opened_at)}</p>
                 </div>
-                <span className="bg-green-500/15 text-green-400 text-xs font-semibold px-2.5 py-1 rounded-full border border-green-500/30">
+                <span className="bg-green-500/15 text-green-600 text-sm font-semibold px-2.5 py-1 rounded-full border border-green-500/30">
                   Aktif
                 </span>
               </div>
@@ -305,9 +305,9 @@ export default function KasPage() {
 
               {/* Ekspektasi kas */}
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-                <p className="text-xs text-amber-600">Ekspektasi Kas di Laci</p>
-                <p className="text-2xl font-bold text-amber-400 mt-0.5">{fmt(expectedCash)}</p>
-                <p className="text-xs text-amber-700 mt-1">
+                <p className="text-sm text-amber-600">Ekspektasi Kas di Laci</p>
+                <p className="text-2xl font-bold text-amber-600 mt-0.5">{fmt(expectedCash)}</p>
+                <p className="text-sm text-amber-700 mt-1">
                   {fmt(session.opening_balance)} awal
                   &nbsp;+&nbsp;{fmt(summary.total_tunai)} tunai
                   {summary.retur_tunai > 0 && (
@@ -320,24 +320,24 @@ export default function KasPage() {
               </div>
 
               {/* ── Pengeluaran kas ── */}
-              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                  <span className="text-sm font-semibold text-white">
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                  <span className="text-base font-semibold text-gray-900">
                     Pengeluaran Kas
                     {cashOuts.length > 0 && (
-                      <span className="ml-2 text-gray-600 font-normal text-xs">({cashOuts.length})</span>
+                      <span className="ml-2 text-gray-500 font-normal text-sm">({cashOuts.length})</span>
                     )}
                   </span>
                   <button
                     onClick={() => { setShowOutForm(v => !v); setError(null) }}
-                    className="text-indigo-400 hover:text-indigo-300 text-sm font-medium transition-colors"
+                    className="text-orange-400 hover:text-orange-600 text-base font-medium transition-colors"
                   >
                     {showOutForm ? 'Batal' : '+ Catat'}
                   </button>
                 </div>
 
                 {showOutForm && (
-                  <div className="px-4 py-3 border-b border-white/10 bg-white/3 space-y-2">
+                  <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 space-y-2">
                     <input
                       type="number"
                       value={outAmount}
@@ -357,7 +357,7 @@ export default function KasPage() {
                     <button
                       onClick={handleAddCashOut}
                       disabled={addingOut || !outAmount || !outDesc.trim()}
-                      className="w-full bg-red-600/80 hover:bg-red-600 text-white rounded-xl py-2 text-sm font-semibold transition-colors disabled:opacity-40"
+                      className="w-full bg-red-600/80 hover:bg-red-600 text-white rounded-xl py-2 text-base font-semibold transition-colors disabled:opacity-40"
                     >
                       {addingOut ? 'Menyimpan...' : 'Catat Pengeluaran'}
                     </button>
@@ -365,16 +365,16 @@ export default function KasPage() {
                 )}
 
                 {cashOuts.length === 0 ? (
-                  <p className="text-center text-gray-600 text-sm py-5">Belum ada pengeluaran</p>
+                  <p className="text-center text-gray-500 text-base py-5">Belum ada pengeluaran</p>
                 ) : (
-                  <ul className="divide-y divide-white/5">
+                  <ul className="divide-y divide-gray-100">
                     {cashOuts.map(o => (
                       <li key={o.id} className="flex items-center justify-between px-4 py-3">
                         <div>
-                          <p className="text-sm text-white">{o.description}</p>
-                          <p className="text-xs text-gray-600">{fmtTime(o.created_at)}</p>
+                          <p className="text-base text-gray-900">{o.description}</p>
+                          <p className="text-sm text-gray-500">{fmtTime(o.created_at)}</p>
                         </div>
-                        <span className="text-sm font-semibold text-red-400 shrink-0 ml-4">
+                        <span className="text-base font-semibold text-red-600 shrink-0 ml-4">
                           −{fmt(o.amount)}
                         </span>
                       </li>
@@ -384,23 +384,23 @@ export default function KasPage() {
               </div>
 
               {/* ── Tutup sesi ── */}
-              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <button
                   onClick={() => { setShowCloseForm(v => !v); setError(null) }}
                   className="w-full flex items-center justify-between px-4 py-3 text-left"
                 >
-                  <span className="text-sm font-semibold text-white">Tutup Sesi Kas</span>
-                  <span className="text-gray-600 text-xs">{showCloseForm ? '▲' : '▼'}</span>
+                  <span className="text-base font-semibold text-gray-900">Tutup Sesi Kas</span>
+                  <span className="text-gray-500 text-sm">{showCloseForm ? '▲' : '▼'}</span>
                 </button>
 
                 {showCloseForm && (
-                  <div className="px-4 py-4 border-t border-white/10 space-y-3">
-                    <p className="text-xs text-gray-500">
+                  <div className="px-4 py-4 border-t border-gray-200 space-y-3">
+                    <p className="text-sm text-gray-500">
                       Hitung fisik uang di laci, masukkan totalnya. Sistem akan menghitung selisih otomatis.
                     </p>
 
                     <div>
-                      <label className="text-xs text-gray-500 block mb-1.5">Kas Aktual di Laci (Rp)</label>
+                      <label className="text-sm text-gray-500 block mb-1.5">Kas Aktual di Laci (Rp)</label>
                       <input
                         type="number"
                         value={closingBalance}
@@ -413,24 +413,24 @@ export default function KasPage() {
                     </div>
 
                     {closingBalance !== '' && (
-                      <div className={`px-3 py-2.5 rounded-xl text-sm border ${
+                      <div className={`px-3 py-2.5 rounded-xl text-base border ${
                         selisih === 0
-                          ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                          ? 'bg-green-500/10 border-green-500/30 text-green-600'
                           : selisih > 0
                             ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
-                            : 'bg-red-500/10 border-red-500/30 text-red-400'
+                            : 'bg-red-50 border-red-500/30 text-red-600'
                       }`}>
                         <span className="font-semibold">
                           {selisih === 0 && 'Pas ✓'}
                           {selisih > 0 && `Lebih ${fmt(selisih)}`}
                           {selisih < 0 && `Kurang ${fmt(Math.abs(selisih))}`}
                         </span>
-                        <span className="text-xs ml-1.5 opacity-60">(ekspektasi {fmt(expectedCash)})</span>
+                        <span className="text-sm ml-1.5 opacity-60">(ekspektasi {fmt(expectedCash)})</span>
                       </div>
                     )}
 
                     <div>
-                      <label className="text-xs text-gray-500 block mb-1.5">Catatan (opsional)</label>
+                      <label className="text-sm text-gray-500 block mb-1.5">Catatan (opsional)</label>
                       <input
                         type="text"
                         value={closingNotes}
@@ -443,7 +443,7 @@ export default function KasPage() {
                     <button
                       onClick={handleCloseSession}
                       disabled={closing || closingBalance === ''}
-                      className="w-full bg-white/10 hover:bg-white/15 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-40"
+                      className="w-full bg-white/10 hover:bg-gray-200 text-gray-900 rounded-xl py-2.5 text-base font-semibold transition-colors disabled:opacity-40"
                     >
                       {closing ? 'Menutup sesi...' : 'Tutup Sesi Kas'}
                     </button>

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -87,9 +87,9 @@ export default function LoginPage() {
 
   if (adminMode) {
     return (
-      <div className="min-h-screen bg-gray-950 relative flex flex-col items-center justify-center gap-6 p-6">
+      <div className="min-h-screen bg-gray-50 relative flex flex-col items-center justify-center gap-6 p-6">
         <button
-          className="absolute top-4 left-4 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+          className="absolute top-4 left-4 text-gray-500 hover:text-gray-700 text-base transition-colors"
           onClick={() => { setAdminMode(false); setError('') }}
         >
           ← Kembali
@@ -97,8 +97,8 @@ export default function LoginPage() {
 
         <Card className="w-full max-w-xs">
           <CardHeader>
-            <p className="text-center text-gray-400 text-sm">Masuk sebagai</p>
-            <p className="text-center text-white text-2xl font-bold">Admin</p>
+            <p className="text-center text-gray-500 text-base">Masuk sebagai</p>
+            <p className="text-center text-gray-900 text-2xl font-bold">Admin</p>
           </CardHeader>
           <CardContent>
             <form onSubmit={doAdminLogin} className="flex flex-col gap-4">
@@ -108,20 +108,20 @@ export default function LoginPage() {
                 autoFocus
                 value={adminEmail}
                 onChange={e => setAdminEmail(e.target.value)}
-                className="w-full bg-white/8 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                className="w-full bg-gray-100 text-gray-900 placeholder-gray-400 rounded-xl px-4 py-3 text-base outline-none focus:ring-2 focus:ring-orange-500 border border-gray-200"
               />
               <input
                 type="password"
                 placeholder="Password"
                 value={adminPassword}
                 onChange={e => setAdminPassword(e.target.value)}
-                className="w-full bg-white/8 text-white placeholder-gray-500 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border border-white/10"
+                className="w-full bg-gray-100 text-gray-900 placeholder-gray-400 rounded-xl px-4 py-3 text-base outline-none focus:ring-2 focus:ring-orange-500 border border-gray-200"
               />
-              {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+              {error && <p className="text-red-600 text-base text-center">{error}</p>}
               <Button
                 type="submit"
                 disabled={submitting || !adminEmail || !adminPassword}
-                className="w-full h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-500 border-0 text-white font-bold disabled:opacity-30"
+                className="w-full h-12 rounded-2xl bg-orange-600 hover:bg-orange-500 border-0 text-white font-bold disabled:opacity-30"
               >
                 {submitting ? 'Memeriksa...' : 'Masuk'}
               </Button>
@@ -134,8 +134,8 @@ export default function LoginPage() {
 
   if (!selected) {
     return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-8 p-6">
-        <h1 className="text-white text-3xl font-bold tracking-tight">Siapa kamu?</h1>
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-8 p-6">
+        <h1 className="text-gray-900 text-3xl font-bold tracking-tight">Siapa kamu?</h1>
 
         {loadingKasirs ? (
           <p className="text-gray-500 text-lg">Memuat...</p>
@@ -147,7 +147,7 @@ export default function LoginPage() {
               <Button
                 key={k.id}
                 onClick={() => selectKasir(k)}
-                className="h-28 text-xl font-semibold rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white border-0"
+                className="h-28 text-xl font-semibold rounded-2xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white border-0"
               >
                 {k.full_name}
               </Button>
@@ -157,7 +157,7 @@ export default function LoginPage() {
 
         <button
           onClick={() => setAdminMode(true)}
-          className="text-gray-600 hover:text-gray-400 text-sm transition-colors"
+          className="text-gray-500 hover:text-gray-500 text-base transition-colors"
         >
           Masuk sebagai Admin
         </button>
@@ -166,9 +166,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 relative flex flex-col items-center justify-center gap-6 p-6">
+    <div className="min-h-screen bg-gray-50 relative flex flex-col items-center justify-center gap-6 p-6">
       <button
-        className="absolute top-4 left-4 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+        className="absolute top-4 left-4 text-gray-500 hover:text-gray-700 text-base transition-colors"
         onClick={() => { setSelected(null); setPin(''); setError('') }}
       >
         ← Ganti kasir
@@ -176,8 +176,8 @@ export default function LoginPage() {
 
       <Card className="w-full max-w-xs">
         <CardHeader>
-          <p className="text-center text-gray-400 text-sm">Masuk sebagai</p>
-          <p className="text-center text-white text-2xl font-bold">{selected.full_name}</p>
+          <p className="text-center text-gray-500 text-base">Masuk sebagai</p>
+          <p className="text-center text-gray-900 text-2xl font-bold">{selected.full_name}</p>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-6">
           {/* PIN dots */}
@@ -187,7 +187,7 @@ export default function LoginPage() {
                 key={i}
                 className={`w-4 h-4 rounded-full transition-colors ${
                   i < pin.length
-                    ? 'bg-indigo-400'
+                    ? 'bg-orange-400'
                     : 'bg-white/20 border border-white/30'
                 }`}
               />
@@ -195,7 +195,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className="text-red-400 font-medium text-base">{error}</p>
+            <p className="text-red-600 font-medium text-base">{error}</p>
           )}
 
           {/* Numpad */}
@@ -209,7 +209,7 @@ export default function LoginPage() {
                   variant="outline"
                   onClick={pressBackspace}
                   disabled={submitting || pin.length === 0}
-                  className="h-16 text-2xl rounded-2xl border-white/20 bg-white/5 hover:bg-white/10 text-white"
+                  className="h-16 text-2xl rounded-2xl border-gray-300 bg-white hover:bg-white/10 text-gray-900"
                 >
                   ⌫
                 </Button>
@@ -219,7 +219,7 @@ export default function LoginPage() {
                   variant="outline"
                   onClick={() => pressDigit(key)}
                   disabled={submitting || pin.length >= 6}
-                  className="h-16 text-2xl font-semibold rounded-2xl border-white/20 bg-white/5 hover:bg-white/10 text-white"
+                  className="h-16 text-2xl font-semibold rounded-2xl border-gray-300 bg-white hover:bg-white/10 text-gray-900"
                 >
                   {key}
                 </Button>
@@ -228,7 +228,7 @@ export default function LoginPage() {
           </div>
 
           {submitting && (
-            <p className="text-gray-400 text-sm animate-pulse">Memeriksa PIN...</p>
+            <p className="text-gray-500 text-base animate-pulse">Memeriksa PIN...</p>
           )}
         </CardContent>
       </Card>

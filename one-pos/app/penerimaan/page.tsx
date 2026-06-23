@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -232,32 +232,32 @@ export default function PenerimaanPage() {
   // ── Render ───────────────────────────────────────────────────
   if (loadingUser) {
     return (
-      <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
-        <span className="text-gray-500 text-sm">Memuat…</span>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <span className="text-gray-500 text-base">Memuat…</span>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] text-white pb-24">
+    <div className="min-h-screen bg-gray-50 text-gray-900 pb-24">
 
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-[#0f0f0f]/95 backdrop-blur border-b border-white/8 px-4 py-3 flex items-center gap-3">
-        <a href="/admin" className="text-gray-500 hover:text-white transition-colors text-sm">← Admin</a>
-        <span className="text-white/15">|</span>
-        <h1 className="text-white font-semibold text-sm">Penerimaan Barang</h1>
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+        <a href="/admin" className="text-gray-500 hover:text-gray-900 transition-colors text-base">← Admin</a>
+        <span className="text-gray-400">|</span>
+        <h1 className="text-gray-900 font-semibold text-base">Penerimaan Barang</h1>
         <div className="flex-1" />
         {mode === 'list' ? (
           <button
             onClick={() => setMode('create')}
-            className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            className="bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white text-base font-medium px-3 py-1.5 rounded-lg transition-colors"
           >
             + Buat GR
           </button>
         ) : (
           <button
             onClick={() => { setMode('list'); setFormErr(null) }}
-            className="text-gray-500 hover:text-white text-sm transition-colors"
+            className="text-gray-500 hover:text-gray-900 text-base transition-colors"
           >
             Batal
           </button>
@@ -271,11 +271,11 @@ export default function PenerimaanPage() {
           <div className="space-y-4">
 
             {/* Header GR */}
-            <div className="bg-white/5 border border-white/8 rounded-2xl p-4 space-y-3">
-              <h2 className="text-white font-semibold text-sm">Info Penerimaan</h2>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+              <h2 className="text-gray-900 font-semibold text-base">Info Penerimaan</h2>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Supplier *</label>
+                <label className="block text-sm text-gray-500 mb-1">Supplier *</label>
                 <DarkSelect
                   value={fSupplier ? String(fSupplier) : ''}
                   onChange={v => setFSupplier(v ? Number(v) : null)}
@@ -285,7 +285,7 @@ export default function PenerimaanPage() {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Checker *</label>
+                <label className="block text-sm text-gray-500 mb-1">Checker *</label>
                 <DarkSelect
                   value={fChecker}
                   onChange={setFChecker}
@@ -295,34 +295,34 @@ export default function PenerimaanPage() {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Tanggal Terima *</label>
+                <label className="block text-sm text-gray-500 mb-1">Tanggal Terima *</label>
                 <input
                   type="date"
                   value={fDate}
                   onChange={e => setFDate(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base focus:outline-none focus:border-orange-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Catatan</label>
+                <label className="block text-sm text-gray-500 mb-1">Catatan</label>
                 <input
                   type="text"
                   value={fNote}
                   onChange={e => setFNote(e.target.value)}
                   placeholder="Opsional"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500"
                 />
               </div>
             </div>
 
             {/* Items */}
-            <div className="bg-white/5 border border-white/8 rounded-2xl p-4">
+            <div className="bg-white border border-gray-200 rounded-2xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-white font-semibold text-sm">Detail Barang</h2>
+                <h2 className="text-gray-900 font-semibold text-base">Detail Barang</h2>
                 <button
                   onClick={addRow}
-                  className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+                  className="text-orange-400 hover:text-orange-600 text-sm transition-colors"
                 >
                   + Tambah baris
                 </button>
@@ -330,13 +330,13 @@ export default function PenerimaanPage() {
 
               <div className="space-y-4">
                 {items.map((row, idx) => (
-                  <div key={row.rowId} className="border border-white/8 rounded-xl p-3 relative">
+                  <div key={row.rowId} className="border border-gray-200 rounded-xl p-3 relative">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-gray-600 text-xs">Barang {idx + 1}</span>
+                      <span className="text-gray-500 text-sm">Barang {idx + 1}</span>
                       {items.length > 1 && (
                         <button
                           onClick={() => removeRow(row.rowId)}
-                          className="text-gray-600 hover:text-red-400 text-xs transition-colors"
+                          className="text-gray-500 hover:text-red-600 text-sm transition-colors"
                         >
                           ✕ Hapus
                         </button>
@@ -351,15 +351,15 @@ export default function PenerimaanPage() {
                         onChange={e => onProductSearch(row.rowId, e.target.value)}
                         onFocus={() => row.hits.length > 0 && updateRow(row.rowId, { dropOpen: true })}
                         placeholder="Cari nama barang…"
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500"
                       />
                       {row.dropOpen && row.hits.length > 0 && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-gray-800 border border-white/10 rounded-xl shadow-2xl z-30 overflow-hidden">
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-md z-30 overflow-hidden">
                           {row.hits.map(hit => (
                             <button
                               key={hit.id}
                               onMouseDown={e => { e.preventDefault(); selectProduct(row.rowId, hit) }}
-                              className="w-full text-left px-3 py-2.5 hover:bg-white/8 text-white text-sm border-b border-white/5 last:border-0"
+                              className="w-full text-left px-3 py-2.5 hover:bg-gray-100 text-gray-900 text-base border-b border-gray-100 last:border-0"
                             >
                               {hit.name}
                             </button>
@@ -387,7 +387,7 @@ export default function PenerimaanPage() {
                           onChange={e => updateRow(row.rowId, { qty: e.target.value })}
                           onFocus={e => e.target.select()}
                           placeholder="Qty"
-                          className="w-28 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          className="w-28 bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                         />
                       </div>
                     )}
@@ -398,12 +398,12 @@ export default function PenerimaanPage() {
 
             {/* Error & Submit */}
             {formErr && (
-              <p className="text-red-400 text-sm bg-red-500/10 rounded-xl px-4 py-2.5">{formErr}</p>
+              <p className="text-red-600 text-base bg-red-50 rounded-xl px-4 py-2.5">{formErr}</p>
             )}
             <button
               onClick={submit}
               disabled={saving}
-              className="w-full py-3.5 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-40"
+              className="w-full py-3.5 rounded-xl text-base font-bold bg-orange-600 hover:bg-orange-500 text-white transition-colors disabled:opacity-40"
             >
               {saving ? 'Menyimpan…' : '✓ Simpan Penerimaan'}
             </button>
@@ -414,53 +414,53 @@ export default function PenerimaanPage() {
         {mode === 'list' && (
           <div className="space-y-3">
             {loadingGrs ? (
-              <p className="text-center text-gray-600 py-12 text-sm">Memuat…</p>
+              <p className="text-center text-gray-500 py-12 text-base">Memuat…</p>
             ) : grs.length === 0 ? (
-              <p className="text-center text-gray-600 py-12 text-sm">Belum ada penerimaan barang.</p>
+              <p className="text-center text-gray-500 py-12 text-base">Belum ada penerimaan barang.</p>
             ) : (
               grs.map(gr => {
                 const isOpen = expandedId === gr.id
                 return (
-                  <div key={gr.id} className="bg-white/5 border border-white/8 rounded-2xl overflow-hidden">
+                  <div key={gr.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
                     {/* Card header */}
                     <button
                       onClick={() => setExpandedId(isOpen ? null : gr.id)}
-                      className="w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-white/[0.03] transition-colors"
+                      className="w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-white text-sm font-semibold">{gr.code}</span>
-                          <span className="text-gray-600 text-xs">{fmtDate(gr.received_at)}</span>
+                          <span className="text-gray-900 text-base font-semibold">{gr.code}</span>
+                          <span className="text-gray-500 text-sm">{fmtDate(gr.received_at)}</span>
                         </div>
-                        <p className="text-gray-400 text-xs mt-0.5">
+                        <p className="text-gray-500 text-sm mt-0.5">
                           {gr.supplier?.name ?? '—'}
-                          <span className="text-gray-600 mx-1.5">·</span>
+                          <span className="text-gray-500 mx-1.5">·</span>
                           Checker: {gr.checker?.full_name ?? '—'}
                         </p>
-                        {gr.note && <p className="text-gray-600 text-xs mt-0.5 truncate">{gr.note}</p>}
+                        {gr.note && <p className="text-gray-500 text-sm mt-0.5 truncate">{gr.note}</p>}
                       </div>
                       <div className="shrink-0 flex flex-col items-end gap-1">
-                        <span className="text-gray-500 text-xs">{gr.goods_receipt_items.length} item</span>
-                        <span className="text-gray-600 text-xs">{isOpen ? '▲' : '▼'}</span>
+                        <span className="text-gray-500 text-sm">{gr.goods_receipt_items.length} item</span>
+                        <span className="text-gray-500 text-sm">{isOpen ? '▲' : '▼'}</span>
                       </div>
                     </button>
 
                     {/* Expanded: item list */}
                     {isOpen && (
-                      <div className="border-t border-white/8 px-4 py-3">
-                        <table className="w-full text-xs">
+                      <div className="border-t border-gray-200 px-4 py-3">
+                        <table className="w-full text-sm">
                           <thead>
-                            <tr className="text-gray-600 uppercase tracking-wide">
+                            <tr className="text-gray-500 uppercase tracking-wide">
                               <th className="text-left pb-2 font-medium">Barang</th>
                               <th className="text-right pb-2 font-medium">Qty</th>
                               <th className="text-right pb-2 font-medium w-20">Satuan</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-white/5">
+                          <tbody className="divide-y divide-gray-100">
                             {gr.goods_receipt_items.map(item => (
                               <tr key={item.id}>
-                                <td className="py-1.5 text-gray-300">{item.product?.name ?? '—'}</td>
-                                <td className="py-1.5 text-right text-white font-medium">{fmtQty(item.qty)}</td>
+                                <td className="py-1.5 text-gray-400">{item.product?.name ?? '—'}</td>
+                                <td className="py-1.5 text-right text-gray-900 font-medium">{fmtQty(item.qty)}</td>
                                 <td className="py-1.5 text-right text-gray-500">{item.unit?.unit_name ?? '—'}</td>
                               </tr>
                             ))}
@@ -470,7 +470,7 @@ export default function PenerimaanPage() {
                           <div className="mt-3 flex justify-end">
                             <a
                               href={`/purchase-invoice?mode=create&gr=${gr.id}`}
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                              className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
                             >
                               Buat Invoice
                             </a>

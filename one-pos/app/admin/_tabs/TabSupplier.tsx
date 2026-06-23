@@ -1,9 +1,9 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import type { User } from '@supabase/supabase-js'
 
-// ── Types ──────────────────────────────────────────────────────
 type Salesman = {
   id: number
   supplier_id: number
@@ -23,17 +23,12 @@ type Supplier = {
 
 type SalesmanRow = { rowId: string; name: string; phone: string }
 
-// ── Page ───────────────────────────────────────────────────────
-export default function SupplierPage() {
+export default function TabSupplier({ user }: { user: User }) {
   const sb = createClient()
-
-  const [userRole, setUserRole]   = useState<string | null>(null)
-  const [loadingUser, setLoadingUser] = useState(true)
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading]     = useState(false)
 
-  // Supplier form
   const [showAddForm, setShowAddForm]     = useState(false)
   const [editingId, setEditingId]         = useState<number | null>(null)
   const [fName, setFName]                 = useState('')
@@ -42,33 +37,14 @@ export default function SupplierPage() {
   const [fPhone, setFPhone]               = useState('')
   const [savingSupplier, setSavingSupplier] = useState(false)
   const [supplierMsg, setSupplierMsg]     = useState<{ ok: boolean; text: string } | null>(null)
-  // Baris salesman dalam form "Tambah Supplier"
   const [salesmanRows, setSalesmanRows]   = useState<SalesmanRow[]>([])
 
-  // Salesman form
   const [addSalesmanFor, setAddSalesmanFor] = useState<number | null>(null)
   const [sName, setSName]                   = useState('')
   const [sPhone, setSPhone]                 = useState('')
   const [savingSalesman, setSavingSalesman] = useState(false)
   const [togglingSmId, setTogglingSmId]     = useState<number | null>(null)
 
-  // ── Auth ──────────────────────────────────────────────────
-  useEffect(() => {
-    sb.auth.getUser().then(({ data }) => {
-      if (!data.user) { window.location.href = '/login'; return }
-      sb.from('profiles').select('role').eq('id', data.user.id).single()
-        .then(({ data: profile }) => {
-          const role = profile?.role ?? null
-          setUserRole(role)
-          setLoadingUser(false)
-          if (role !== 'admin' && role !== 'owner') {
-            window.location.href = '/admin'
-          }
-        })
-    })
-  }, [])
-
-  // ── Load ───────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true)
     const { data } = await sb.from('suppliers')
@@ -78,18 +54,7 @@ export default function SupplierPage() {
     setLoading(false)
   }, [sb])
 
-  useEffect(() => {
-    if (!loadingUser && (userRole === 'admin' || userRole === 'owner')) load()
-  }, [loadingUser])
-
-  // ── Supplier form helpers ───────────────────────────────────
-  function openAdd() {
-    setEditingId(null)
-    setFName(''); setFAddress(''); setFNpwp(''); setFPhone('')
-    setSalesmanRows([])
-    setSupplierMsg(null)
-    setShowAddForm(true)
-  }
+  useEffect(() => { load() }, [load])
 
   function addSmRow() {
     setSalesmanRows(r => [...r, { rowId: Math.random().toString(36).slice(2), name: '', phone: '' }])
@@ -99,6 +64,14 @@ export default function SupplierPage() {
   }
   function updateSmRow(rowId: string, field: 'name' | 'phone', value: string) {
     setSalesmanRows(r => r.map(x => x.rowId === rowId ? { ...x, [field]: value } : x))
+  }
+
+  function openAdd() {
+    setEditingId(null)
+    setFName(''); setFAddress(''); setFNpwp(''); setFPhone('')
+    setSalesmanRows([])
+    setSupplierMsg(null)
+    setShowAddForm(true)
   }
 
   function openEdit(s: Supplier) {
@@ -146,7 +119,6 @@ export default function SupplierPage() {
     setSavingSupplier(false)
   }
 
-  // ── Salesman helpers ────────────────────────────────────────
   function openAddSalesman(supplierId: number) {
     setAddSalesmanFor(supplierId)
     setSName(''); setSPhone('')
@@ -173,35 +145,19 @@ export default function SupplierPage() {
     load()
   }
 
-  // ── Render ──────────────────────────────────────────────────
-  if (loadingUser) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <span className="text-gray-500 text-base">Memuat…</span>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 pb-24">
-
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <a href="/admin" className="text-gray-500 hover:text-gray-900 transition-colors text-base">← Admin</a>
-        <span className="text-gray-400">|</span>
-        <h1 className="text-gray-900 font-semibold text-base">Supplier</h1>
-        <div className="flex-1" />
+    <div className="pb-8">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-gray-900 font-bold text-base">Daftar Supplier</p>
         <button
           onClick={openAdd}
-          className="bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white text-base font-medium px-3 py-1.5 rounded-lg transition-colors"
+          className="bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
         >
           + Tambah
         </button>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-4 space-y-3">
-
-        {/* Form tambah supplier baru */}
+      <div className="space-y-3">
         {showAddForm && (
           <SupplierForm
             title="Tambah Supplier"
@@ -220,7 +176,6 @@ export default function SupplierPage() {
           />
         )}
 
-        {/* Daftar supplier */}
         {loading ? (
           <p className="text-center text-gray-500 py-12 text-base">Memuat…</p>
         ) : suppliers.length === 0 && !showAddForm ? (
@@ -233,8 +188,6 @@ export default function SupplierPage() {
 
             return (
               <div key={s.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-
-                {/* Supplier edit form (inline) */}
                 {isEditing ? (
                   <div className="p-4">
                     <SupplierForm
@@ -251,19 +204,12 @@ export default function SupplierPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Header supplier */}
                     <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-gray-900 font-semibold text-base">{s.name}</p>
-                        {s.npwp && (
-                          <p className="text-gray-500 text-sm mt-0.5">NPWP: {s.npwp}</p>
-                        )}
-                        {s.phone && (
-                          <p className="text-gray-500 text-sm mt-0.5">Telp: {s.phone}</p>
-                        )}
-                        {s.address && (
-                          <p className="text-gray-500 text-sm mt-0.5">{s.address}</p>
-                        )}
+                        {s.npwp && <p className="text-gray-500 text-sm mt-0.5">NPWP: {s.npwp}</p>}
+                        {s.phone && <p className="text-gray-500 text-sm mt-0.5">Telp: {s.phone}</p>}
+                        {s.address && <p className="text-gray-500 text-sm mt-0.5">{s.address}</p>}
                       </div>
                       <button
                         onClick={() => openEdit(s)}
@@ -273,7 +219,6 @@ export default function SupplierPage() {
                       </button>
                     </div>
 
-                    {/* Salesmen */}
                     <div className="border-t border-gray-200 px-4 py-3">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-gray-500 text-sm font-medium uppercase tracking-wide">Salesman</span>
@@ -285,7 +230,6 @@ export default function SupplierPage() {
                         </button>
                       </div>
 
-                      {/* Active salesmen */}
                       {activeSalesmen.length === 0 && inactiveSalesmen.length === 0 && (
                         <p className="text-gray-700 text-sm py-1">Belum ada salesman.</p>
                       )}
@@ -293,9 +237,7 @@ export default function SupplierPage() {
                         <div key={sm.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
                           <div>
                             <span className="text-gray-900 text-base">{sm.name}</span>
-                            {sm.phone && (
-                              <span className="text-gray-500 text-sm ml-2">{sm.phone}</span>
-                            )}
+                            {sm.phone && <span className="text-gray-500 text-sm ml-2">{sm.phone}</span>}
                           </div>
                           <button
                             onClick={() => toggleSalesman(sm.id, true)}
@@ -307,37 +249,26 @@ export default function SupplierPage() {
                         </div>
                       ))}
 
-                      {/* Inline form tambah salesman */}
                       {addSalesmanFor === s.id && (
                         <div className="mt-3 pt-3 border-t border-gray-200">
                           <p className="text-sm text-gray-500 mb-2">Tambah Salesman</p>
                           <input
-                            type="text"
-                            value={sName}
-                            onChange={e => setSName(e.target.value)}
-                            placeholder="Nama salesman *"
-                            autoFocus
+                            type="text" value={sName} onChange={e => setSName(e.target.value)}
+                            placeholder="Nama salesman *" autoFocus
                             className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-2"
                           />
                           <input
-                            type="tel"
-                            value={sPhone}
-                            onChange={e => setSPhone(e.target.value)}
+                            type="tel" value={sPhone} onChange={e => setSPhone(e.target.value)}
                             placeholder="No. HP salesman"
                             className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-2"
                           />
                           <div className="flex gap-2">
-                            <button
-                              onClick={() => setAddSalesmanFor(null)}
-                              className="flex-1 py-1.5 rounded-lg text-sm border border-gray-200 text-gray-500 hover:text-gray-900 transition-colors"
-                            >
+                            <button onClick={() => setAddSalesmanFor(null)}
+                              className="flex-1 py-1.5 rounded-lg text-sm border border-gray-200 text-gray-500 hover:text-gray-900 transition-colors">
                               Batal
                             </button>
-                            <button
-                              onClick={saveSalesman}
-                              disabled={savingSalesman || !sName.trim()}
-                              className="flex-1 py-1.5 rounded-lg text-sm bg-orange-600 hover:bg-orange-500 text-white font-medium transition-colors disabled:opacity-40"
-                            >
+                            <button onClick={saveSalesman} disabled={savingSalesman || !sName.trim()}
+                              className="flex-1 py-1.5 rounded-lg text-sm bg-orange-600 hover:bg-orange-500 text-white font-medium transition-colors disabled:opacity-40">
                               {savingSalesman ? 'Menyimpan…' : 'Simpan'}
                             </button>
                           </div>
@@ -355,15 +286,9 @@ export default function SupplierPage() {
   )
 }
 
-// ── Supplier Form (shared untuk add & edit) ────────────────────
 function SupplierForm({
-  title,
-  fName, setFName,
-  fAddress, setFAddress,
-  fNpwp, setFNpwp,
-  fPhone, setFPhone,
-  saving, msg,
-  onSave, onCancel,
+  title, fName, setFName, fAddress, setFAddress, fNpwp, setFNpwp, fPhone, setFPhone,
+  saving, msg, onSave, onCancel,
   salesmanRows, onAddRow, onRemoveRow, onUpdateRow,
 }: {
   title: string
@@ -375,7 +300,6 @@ function SupplierForm({
   msg: { ok: boolean; text: string } | null
   onSave: () => void
   onCancel: () => void
-  // opsional — hanya di-pass saat tambah supplier baru
   salesmanRows?: SalesmanRow[]
   onAddRow?: () => void
   onRemoveRow?: (rowId: string) => void
@@ -386,88 +310,51 @@ function SupplierForm({
       <h2 className="text-gray-900 font-semibold text-base mb-4">{title}</h2>
 
       <label className="block text-sm text-gray-500 mb-1">Nama Supplier *</label>
-      <input
-        type="text"
-        value={fName}
-        onChange={e => setFName(e.target.value)}
-        placeholder="PT Contoh Supplier"
-        autoFocus
-        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3"
-      />
+      <input type="text" value={fName} onChange={e => setFName(e.target.value)}
+        placeholder="PT Contoh Supplier" autoFocus
+        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3" />
 
       <label className="block text-sm text-gray-500 mb-1">NPWP</label>
-      <input
-        type="text"
-        value={fNpwp}
-        onChange={e => setFNpwp(e.target.value)}
+      <input type="text" value={fNpwp} onChange={e => setFNpwp(e.target.value)}
         placeholder="01.234.567.8-901.000"
-        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3"
-      />
+        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3" />
 
       <label className="block text-sm text-gray-500 mb-1">No. Telp Kantor</label>
-      <input
-        type="tel"
-        value={fPhone}
-        onChange={e => setFPhone(e.target.value)}
+      <input type="tel" value={fPhone} onChange={e => setFPhone(e.target.value)}
         placeholder="021-1234567"
-        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3"
-      />
+        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-3" />
 
       <label className="block text-sm text-gray-500 mb-1">Alamat</label>
-      <textarea
-        value={fAddress}
-        onChange={e => setFAddress(e.target.value)}
-        placeholder="Jl. Contoh No. 1, Jakarta"
-        rows={2}
-        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-4 resize-none"
-      />
+      <textarea value={fAddress} onChange={e => setFAddress(e.target.value)}
+        placeholder="Jl. Contoh No. 1, Jakarta" rows={2}
+        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 mb-4 resize-none" />
 
-      {/* Salesman — hanya saat tambah supplier baru */}
       {salesmanRows !== undefined && (
         <div className="border-t border-gray-200 pt-4 mb-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-gray-500 font-medium">
-              Salesman <span className="text-gray-500 font-normal">(opsional)</span>
-            </span>
-            <button
-              type="button"
-              onClick={onAddRow}
-              className="text-orange-400 hover:text-orange-600 text-sm transition-colors"
-            >
+            <span className="text-sm text-gray-500 font-medium">Salesman <span className="font-normal">(opsional)</span></span>
+            <button type="button" onClick={onAddRow}
+              className="text-orange-400 hover:text-orange-600 text-sm transition-colors">
               + Tambah baris
             </button>
           </div>
-
           {salesmanRows.length === 0 ? (
-            <p className="text-gray-700 text-sm py-1">
-              Klik "+ Tambah baris" untuk langsung daftarkan salesman.
-            </p>
+            <p className="text-gray-700 text-sm py-1">Klik "+ Tambah baris" untuk langsung daftarkan salesman.</p>
           ) : (
             <div className="space-y-2">
               {salesmanRows.map((row, i) => (
                 <div key={row.rowId} className="flex gap-2 items-center">
-                  <input
-                    type="text"
-                    value={row.name}
+                  <input type="text" value={row.name}
                     onChange={e => onUpdateRow?.(row.rowId, 'name', e.target.value)}
                     placeholder={`Nama salesman ${i + 1} *`}
                     autoFocus={i === salesmanRows.length - 1}
-                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500"
-                  />
-                  <input
-                    type="tel"
-                    value={row.phone}
+                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500" />
+                  <input type="tel" value={row.phone}
                     onChange={e => onUpdateRow?.(row.rowId, 'phone', e.target.value)}
                     placeholder="No. HP"
-                    className="w-32 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => onRemoveRow?.(row.rowId)}
-                    className="text-gray-500 hover:text-red-600 text-base leading-none transition-colors shrink-0"
-                  >
-                    ✕
-                  </button>
+                    className="w-32 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500" />
+                  <button type="button" onClick={() => onRemoveRow?.(row.rowId)}
+                    className="text-gray-500 hover:text-red-600 text-base leading-none transition-colors shrink-0">✕</button>
                 </div>
               ))}
             </div>
@@ -480,17 +367,12 @@ function SupplierForm({
       )}
 
       <div className="flex gap-2">
-        <button
-          onClick={onCancel}
-          className="flex-1 py-2 rounded-lg text-base border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300 transition-colors"
-        >
+        <button onClick={onCancel}
+          className="flex-1 py-2 rounded-lg text-base border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300 transition-colors">
           Batal
         </button>
-        <button
-          onClick={onSave}
-          disabled={saving}
-          className="flex-1 py-2 rounded-lg text-base bg-orange-600 hover:bg-orange-500 text-white font-medium transition-colors disabled:opacity-50"
-        >
+        <button onClick={onSave} disabled={saving}
+          className="flex-1 py-2 rounded-lg text-base bg-orange-600 hover:bg-orange-500 text-white font-medium transition-colors disabled:opacity-50">
           {saving ? 'Menyimpan…' : 'Simpan'}
         </button>
       </div>

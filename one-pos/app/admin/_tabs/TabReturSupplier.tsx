@@ -1,0 +1,375 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { User } from '@supabase/supabase-js'
+import { DarkSelect } from '@/components/DarkSelect'
+
+type UnitOption = { id: number; unit_name: string; factor_to_base: number }
+
+type SupplierProduct = {
+  product_id: number
+  product_name: string
+  units: UnitOption[]
+}
+
+type ReturnItemRow = {
+  rowId: string
+  productId: number | null
+  unitId: number | null
+  unitOptions: UnitOption[]
+  qty: string
+  reason: string
+}
+
+type SrItem = {
+  id: number
+  qty: number
+  reason: string | null
+  product: { name: string } | null
+  unit: { unit_name: string } | null
+}
+
+type SrRecord = {
+  id: number
+  code: string
+  returned_at: string
+  note: string | null
+  supplier: { name: string } | null
+  supplier_return_items: SrItem[]
+}
+
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+
+const fmtQty = (n: number) =>
+  Number.isInteger(Number(n)) ? String(Number(n)) : Number(n).toLocaleString('id-ID', { maximumFractionDigits: 4 })
+
+function newRow(): ReturnItemRow {
+  return { rowId: Math.random().toString(36).slice(2), productId: null, unitId: null, unitOptions: [], qty: '', reason: '' }
+}
+
+export default function TabReturSupplier({ user }: { user: User }) {
+  const sb = createClient()
+
+  const [mode, setMode] = useState<'list' | 'create'>('list')
+
+  const [srs, setSrs]               = useState<SrRecord[]>([])
+  const [loadingSrs, setLoadingSrs] = useState(false)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+
+  const [suppliers, setSuppliers]       = useState<{ id: number; name: string }[]>([])
+  const [supplierProds, setSupplierProds] = useState<SupplierProduct[]>([])
+  const [loadingProds, setLoadingProds] = useState(false)
+
+  const [fSupplier, setFSupplier] = useState<number | null>(null)
+  const [fDate, setFDate]         = useState('')
+  const [fNote, setFNote]         = useState('')
+  const [items, setItems]         = useState<ReturnItemRow[]>([newRow()])
+  const [saving, setSaving]       = useState(false)
+  const [formErr, setFormErr]     = useState<string | null>(null)
+
+  const loadSrs = useCallback(async () => {
+    setLoadingSrs(true)
+    const { data } = await sb.from('supplier_returns')
+      .select(`
+        id, code, returned_at, note,
+        supplier:suppliers(name),
+        supplier_return_items(
+          id, qty, reason,
+          product:products(name),
+          unit:product_units(unit_name)
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setSrs((data ?? []) as unknown as SrRecord[])
+    setLoadingSrs(false)
+  }, [sb])
+
+  const loadSuppliers = useCallback(async () => {
+    const { data } = await sb.from('suppliers').select('id, name').order('name')
+    setSuppliers(data ?? [])
+  }, [sb])
+
+  useEffect(() => {
+    loadSrs()
+    loadSuppliers()
+    setFDate(new Date().toISOString().split('T')[0])
+  }, [loadSrs, loadSuppliers])
+
+  async function loadSupplierProducts(supplierId: number) {
+    setLoadingProds(true)
+    setSupplierProds([])
+    setItems([newRow()])
+
+    const { data: grItems } = await sb
+      .from('goods_receipt_items')
+      .select(`
+        product_id,
+        product:products(id, name),
+        goods_receipt:goods_receipts!inner(supplier_id)
+      `)
+      .eq('goods_receipts.supplier_id', supplierId)
+
+    if (!grItems || grItems.length === 0) { setLoadingProds(false); return }
+
+    const productIds = [...new Set(grItems.map((r: any) => r.product_id as number))]
+    const { data: units } = await sb
+      .from('product_units')
+      .select('id, product_id, unit_name, factor_to_base')
+      .in('product_id', productIds)
+      .order('is_default', { ascending: false })
+
+    const prodMap = new Map<number, SupplierProduct>()
+    for (const row of grItems as any[]) {
+      const pid = row.product_id as number
+      if (!prodMap.has(pid)) {
+        prodMap.set(pid, { product_id: pid, product_name: row.product?.name ?? '—', units: [] })
+      }
+    }
+    for (const u of units as any[]) {
+      const entry = prodMap.get(u.product_id)
+      if (entry) entry.units.push({ id: u.id, unit_name: u.unit_name, factor_to_base: u.factor_to_base })
+    }
+
+    setSupplierProds([...prodMap.values()].sort((a, b) => a.product_name.localeCompare(b.product_name)))
+    setLoadingProds(false)
+  }
+
+  function updateRow(rowId: string, patch: Partial<ReturnItemRow>) {
+    setItems(prev => prev.map(r => r.rowId === rowId ? { ...r, ...patch } : r))
+  }
+
+  function selectProduct(rowId: string, prod: SupplierProduct) {
+    updateRow(rowId, { productId: prod.product_id, unitOptions: prod.units, unitId: prod.units[0]?.id ?? null })
+  }
+
+  async function submit() {
+    setFormErr(null)
+    if (!fSupplier) { setFormErr('Pilih supplier'); return }
+    if (!fDate)     { setFormErr('Isi tanggal retur'); return }
+
+    const validItems = items.filter(r => r.productId && r.unitId && parseFloat(r.qty) > 0)
+    if (validItems.length === 0) { setFormErr('Minimal 1 barang dengan qty valid'); return }
+
+    setSaving(true)
+    const { error } = await sb.rpc('return_to_supplier', {
+      p_supplier_id:  fSupplier,
+      p_warehouse_id: 1,
+      p_returned_at:  fDate,
+      p_note:         fNote,
+      p_created_by:   user.id,
+      p_items: validItems.map(r => ({
+        unit_id: r.unitId,
+        qty:     parseFloat(r.qty),
+        reason:  r.reason.trim() || null,
+      })),
+    })
+
+    if (error) { setFormErr(error.message); setSaving(false); return }
+
+    setMode('list')
+    setFSupplier(null); setFNote(''); setSupplierProds([])
+    setFDate(new Date().toISOString().split('T')[0])
+    setItems([newRow()])
+    loadSrs()
+    setSaving(false)
+  }
+
+  return (
+    <div className="pb-8">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-gray-900 font-bold text-base">Retur ke Supplier</p>
+        {mode === 'list' ? (
+          <button onClick={() => setMode('create')}
+            className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+            + Buat SR
+          </button>
+        ) : (
+          <button onClick={() => { setMode('list'); setFormErr(null) }}
+            className="text-gray-500 hover:text-gray-900 text-sm transition-colors">
+            Batal
+          </button>
+        )}
+      </div>
+
+      {mode === 'create' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+            <h2 className="text-gray-900 font-semibold text-base">Info Retur</h2>
+
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">Supplier *</label>
+              <DarkSelect
+                value={fSupplier ? String(fSupplier) : ''}
+                onChange={v => {
+                  const id = v ? Number(v) : null
+                  setFSupplier(id)
+                  if (id) loadSupplierProducts(id)
+                  else { setSupplierProds([]); setItems([newRow()]) }
+                }}
+                options={suppliers.map(s => ({ value: String(s.id), label: s.name }))}
+                placeholder="— Pilih supplier —"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">Tanggal Retur *</label>
+              <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
+                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base focus:outline-none focus:border-orange-500" />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">Catatan</label>
+              <input type="text" value={fNote} onChange={e => setFNote(e.target.value)}
+                placeholder="Opsional"
+                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500" />
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-gray-900 font-semibold text-base">Barang Diretur</h2>
+              {fSupplier && (
+                <button onClick={() => setItems(prev => [...prev, newRow()])}
+                  className="text-orange-400 hover:text-orange-600 text-sm transition-colors">
+                  + Tambah baris
+                </button>
+              )}
+            </div>
+
+            {!fSupplier ? (
+              <p className="text-gray-500 text-base py-2">Pilih supplier dulu untuk melihat daftar barang.</p>
+            ) : loadingProds ? (
+              <p className="text-gray-500 text-base py-2">Memuat daftar barang…</p>
+            ) : supplierProds.length === 0 ? (
+              <p className="text-gray-500 text-base py-2">Belum ada barang yang pernah diterima dari supplier ini.</p>
+            ) : (
+              <div className="space-y-4">
+                {items.map((row, idx) => (
+                  <div key={row.rowId} className="border border-gray-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-gray-500 text-sm">Barang {idx + 1}</span>
+                      {items.length > 1 && (
+                        <button onClick={() => setItems(prev => prev.filter(r => r.rowId !== row.rowId))}
+                          className="text-gray-500 hover:text-red-600 text-sm transition-colors">
+                          ✕ Hapus
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mb-2">
+                      <DarkSelect
+                        value={row.productId ? String(row.productId) : ''}
+                        onChange={v => {
+                          const prod = supplierProds.find(p => p.product_id === Number(v))
+                          if (prod) selectProduct(row.rowId, prod)
+                          else updateRow(row.rowId, { productId: null, unitId: null, unitOptions: [] })
+                        }}
+                        options={supplierProds.map(p => ({ value: String(p.product_id), label: p.product_name }))}
+                        placeholder="— Pilih barang —"
+                      />
+                    </div>
+
+                    {row.productId && (
+                      <div className="flex gap-2 mb-2">
+                        <div className="flex-1">
+                          <DarkSelect
+                            value={row.unitId ? String(row.unitId) : ''}
+                            onChange={v => updateRow(row.rowId, { unitId: Number(v) })}
+                            options={row.unitOptions.map(u => ({ value: String(u.id), label: u.unit_name }))}
+                          />
+                        </div>
+                        <input type="number" inputMode="decimal" min={0.01} step="any"
+                          value={row.qty}
+                          onChange={e => updateRow(row.rowId, { qty: e.target.value })}
+                          onFocus={e => e.target.select()}
+                          placeholder="Qty"
+                          className="w-28 bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                      </div>
+                    )}
+
+                    {row.productId && (
+                      <input type="text" value={row.reason}
+                        onChange={e => updateRow(row.rowId, { reason: e.target.value })}
+                        placeholder="Alasan retur (opsional)"
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-orange-500" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {formErr && (
+            <p className="text-red-600 text-base bg-red-50 rounded-xl px-4 py-2.5">{formErr}</p>
+          )}
+          <button onClick={submit} disabled={saving || !fSupplier || supplierProds.length === 0}
+            className="w-full py-3.5 rounded-xl text-base font-bold bg-orange-600 hover:bg-orange-500 text-white transition-colors disabled:opacity-40">
+            {saving ? 'Menyimpan…' : '✓ Simpan Retur'}
+          </button>
+        </div>
+      )}
+
+      {mode === 'list' && (
+        <div className="space-y-3">
+          {loadingSrs ? (
+            <p className="text-center text-gray-500 py-12 text-base">Memuat…</p>
+          ) : srs.length === 0 ? (
+            <p className="text-center text-gray-500 py-12 text-base">Belum ada retur ke supplier.</p>
+          ) : (
+            srs.map(sr => {
+              const isOpen = expandedId === sr.id
+              return (
+                <div key={sr.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                  <button onClick={() => setExpandedId(isOpen ? null : sr.id)}
+                    className="w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-gray-50 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-gray-900 text-base font-semibold">{sr.code}</span>
+                        <span className="text-gray-500 text-sm">{fmtDate(sr.returned_at)}</span>
+                      </div>
+                      <p className="text-gray-500 text-sm mt-0.5">{sr.supplier?.name ?? '—'}</p>
+                      {sr.note && <p className="text-gray-500 text-sm mt-0.5 truncate">{sr.note}</p>}
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-1">
+                      <span className="text-gray-500 text-sm">{sr.supplier_return_items.length} item</span>
+                      <span className="text-gray-500 text-sm">{isOpen ? '▲' : '▼'}</span>
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div className="border-t border-gray-200 px-4 py-3">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-gray-500 uppercase tracking-wide">
+                            <th className="text-left pb-2 font-medium">Barang</th>
+                            <th className="text-right pb-2 font-medium">Qty</th>
+                            <th className="text-right pb-2 font-medium w-16">Satuan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {sr.supplier_return_items.map(item => (
+                            <tr key={item.id}>
+                              <td className="py-1.5">
+                                <span className="text-gray-400">{item.product?.name ?? '—'}</span>
+                                {item.reason && <span className="text-gray-500 ml-1.5">· {item.reason}</span>}
+                              </td>
+                              <td className="py-1.5 text-right text-gray-900 font-medium">{fmtQty(item.qty)}</td>
+                              <td className="py-1.5 text-right text-gray-500">{item.unit?.unit_name ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

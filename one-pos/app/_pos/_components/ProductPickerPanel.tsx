@@ -3,16 +3,17 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import type { Product, Unit } from '../_types'
+import type { Product, Unit, PriceOverride } from '../_types'
 import { rp, resolvePrice } from '../_types'
 import { CategoryPill, EmptyState, ProductGrid } from './ProductGrid'
 
 interface Props {
   tier: 'retail' | 'toko'
+  priceOverrides: Record<number, PriceOverride>
   onAddToCart: (product: Product, unit: Unit, qty: number) => void
 }
 
-export function ProductPickerPanel({ tier, onAddToCart }: Props) {
+export function ProductPickerPanel({ tier, priceOverrides, onAddToCart }: Props) {
   const [query, setQuery]                   = useState('')
   const [activeCategory, setActiveCat]      = useState<string | null>(null)
   const [categories, setCategories]         = useState<string[]>([])
@@ -167,7 +168,7 @@ export function ProductPickerPanel({ tier, onAddToCart }: Props) {
                     <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-2 px-1">
                       {sec === 'favorit' ? '⭐ Favorit' : '🔥 Terlaris'}
                     </p>
-                    <ProductGrid products={list} picking={picking} tier={tier} onPick={openPicking} />
+                    <ProductGrid products={list} picking={picking} tier={tier} priceOverrides={priceOverrides} onPick={openPicking} />
                   </div>
                 )
               })}
@@ -178,7 +179,7 @@ export function ProductPickerPanel({ tier, onAddToCart }: Props) {
         ) : products.length === 0 ? (
           <EmptyState text="Produk tidak ditemukan" />
         ) : (
-          <ProductGrid products={products} picking={picking} tier={tier} onPick={openPicking} />
+          <ProductGrid products={products} picking={picking} tier={tier} priceOverrides={priceOverrides} onPick={openPicking} />
         )}
       </div>
 
@@ -193,7 +194,7 @@ export function ProductPickerPanel({ tier, onAddToCart }: Props) {
               <p className="text-gray-900 font-bold text-base leading-tight truncate">{picking.name}</p>
               {pickUnit && (
                 <p className="text-orange-600 font-bold text-base mt-0.5">
-                  {rp(resolvePrice(pickUnit, tier))}
+                  {rp(resolvePrice(pickUnit, tier, priceOverrides))}
                   <span className="text-gray-500 font-normal text-sm">/{pickUnit.unit_name}</span>
                 </p>
               )}
@@ -217,7 +218,7 @@ export function ProductPickerPanel({ tier, onAddToCart }: Props) {
                   }`}
                 >
                   {u.unit_name}
-                  <span className="text-sm font-normal ml-1.5 opacity-60">{rp(resolvePrice(u, tier))}</span>
+                  <span className="text-sm font-normal ml-1.5 opacity-60">{rp(resolvePrice(u, tier, priceOverrides))}</span>
                 </button>
               ))}
             </div>
@@ -248,7 +249,7 @@ export function ProductPickerPanel({ tier, onAddToCart }: Props) {
             {pickUnit && (
               <div className="flex-1 text-right">
                 <p className="text-gray-500 text-sm">Subtotal</p>
-                <p className="text-gray-900 font-bold text-base">{rp(pickQty * resolvePrice(pickUnit, tier))}</p>
+                <p className="text-gray-900 font-bold text-base">{rp(pickQty * resolvePrice(pickUnit, tier, priceOverrides))}</p>
               </div>
             )}
             <Button

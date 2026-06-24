@@ -1,6 +1,6 @@
 'use client'
 
-import type { Product } from '../_types'
+import type { Product, PriceOverride } from '../_types'
 import { rp, resolvePrice } from '../_types'
 
 export function CategoryPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -27,18 +27,19 @@ export function EmptyState({ text }: { text: string }) {
 }
 
 export function ProductGrid({
-  products, picking, tier, onPick,
+  products, picking, tier, priceOverrides, onPick,
 }: {
   products: Product[]
   picking: Product | null
   tier: 'retail' | 'toko'
+  priceOverrides?: Record<number, PriceOverride>
   onPick: (p: Product) => void
 }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
       {products.map(p => {
         const def      = p.product_units.find(u => u.is_default) ?? p.product_units[0]
-        const price    = def ? resolvePrice(def, tier) : null
+        const price    = def ? resolvePrice(def, tier, priceOverrides) : null
         const selected = picking?.id === p.id
         return (
           <button

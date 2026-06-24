@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
-import type { CartItem, Customer, PayMethod, Product, Unit } from './_types'
+import type { CartItem, Customer, PayMethod, Product, Unit, PriceOverride } from './_types'
 import { rp, resolvePrice } from './_types'
 import { ProductPickerPanel } from './_components/ProductPickerPanel'
 import { CheckoutOverlay } from './_components/CheckoutOverlay'
@@ -30,9 +30,32 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
   const [lastNota, setLastNota]         = useState<string | null>(null)
   const [checkoutErr, setCheckoutErr]   = useState<string | null>(null)
 
+  // Price list untuk warehouse ini
+  const [priceOverrides, setPriceOverrides] = useState<Record<number, PriceOverride>>({})
+
   const tier      = customer?.category ?? 'retail'
   const cartTotal = cart.reduce((s, i) => s + i.subtotal, 0)
   const cartCount = cart.reduce((s, i) => s + i.qty, 0)
+
+  // ── Load price list untuk warehouse aktif ──────────────────
+
+  useEffect(() => {
+    const warehouseId = Number(process.env.NEXT_PUBLIC_WAREHOUSE_ID ?? '1')
+    const sb = createClient()
+    sb.from('warehouses').select('price_list_id').eq('id', warehouseId).single()
+      .then(async ({ data: wh }) => {
+        if (!wh?.price_list_id) return
+        const { data: items } = await sb
+          .from('price_list_items')
+          .select('product_unit_id, price_retail, price_toko')
+          .eq('price_list_id', wh.price_list_id)
+        const map: Record<number, PriceOverride> = {}
+        for (const item of items ?? []) {
+          map[item.product_unit_id] = { price_retail: item.price_retail, price_toko: item.price_toko }
+        }
+        setPriceOverrides(map)
+      })
+  }, [])
 
   // ── Close customer dropdown on outside click ────────────────
 
@@ -65,15 +88,15 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
 
   useEffect(() => {
     setCart(prev => prev.map(i => {
-      const unit_price = resolvePrice(i.unit, tier)
+      const unit_price = resolvePrice(i.unit, tier, priceOverrides)
       return { ...i, unit_price, subtotal: i.qty * unit_price }
     }))
-  }, [tier])
+  }, [tier, priceOverrides])
 
   // ── Cart helpers ────────────────────────────────────────────
 
   function addToCart(product: Product, unit: Unit, qty: number) {
-    const unit_price = resolvePrice(unit, tier)
+    const unit_price = resolvePrice(unit, tier, priceOverrides)
     const key = `${product.id}-${unit.id}`
     setCart(prev => {
       const found = prev.find(i => i.key === key)
@@ -169,7 +192,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
       <div className="flex flex-1 overflow-hidden">
 
         {/* LEFT — Product panel */}
-        <ProductPickerPanel tier={tier} onAddToCart={addToCart} />
+        <ProductPickerPanel tier={tier} priceOverrides={priceOverrides} onAddToCart={addToCart} />
 
         {/* RIGHT — Cart panel */}
         <div className="w-80 lg:w-96 flex flex-col overflow-hidden shrink-0 bg-gray-50">

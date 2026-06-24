@@ -15,9 +15,12 @@ import TabPenerimaan            from './_tabs/TabPenerimaan'
 import TabReturSupplier         from './_tabs/TabReturSupplier'
 import TabInvoicePembelian      from './_tabs/TabInvoicePembelian'
 import TabPembayaranInvoice     from './_tabs/TabPembayaranInvoice'
+import TabPriceLists            from './_tabs/TabPriceLists'
+import TabWarehouse             from './_tabs/TabWarehouse'
 
 type Tab = 'antaran' | 'belum_lunas' | 'pendapatan' | 'kas_tunai' | 'produk' | 'kategori' | 'kasir'
          | 'supplier' | 'penerimaan' | 'retur_supplier' | 'invoice_pembelian' | 'pembayaran_invoice'
+         | 'price_lists' | 'warehouse'
 
 export default function AdminPage() {
   const sb = createClient()
@@ -64,6 +67,8 @@ export default function AdminPage() {
       { v: 'retur_supplier'       as Tab, label: 'Retur Supplier' },
       { v: 'invoice_pembelian'    as Tab, label: 'Invoice Pembelian' },
       { v: 'pembayaran_invoice'   as Tab, label: 'Pembayaran Invoice' },
+      { v: 'price_lists'          as Tab, label: 'Price Lists' },
+      { v: 'warehouse'            as Tab, label: 'Gudang' },
     ] : []),
     { v: 'kasir', label: 'Kasir' },
   ]
@@ -107,6 +112,8 @@ export default function AdminPage() {
           {tab === 'retur_supplier'    && <TabReturSupplier     user={user} />}
           {tab === 'invoice_pembelian' && <TabInvoicePembelian  user={user} />}
           {tab === 'pembayaran_invoice'&& <TabPembayaranInvoice user={user} />}
+          {tab === 'price_lists'       && <TabPriceLists        user={user} />}
+          {tab === 'warehouse'         && <TabWarehouse         user={user} />}
         </div>
       </div>
     </div>

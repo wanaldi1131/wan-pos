@@ -45,6 +45,17 @@ export const PAY_METHODS: { v: PayMethod; label: string }[] = [
 
 export const rp = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
-export function resolvePrice(unit: Unit, tier: 'retail' | 'toko'): number {
+export type PriceOverride = { price_retail: number | null; price_toko: number | null }
+
+export function resolvePrice(
+  unit: Unit,
+  tier: 'retail' | 'toko',
+  overrides?: Record<number, PriceOverride>
+): number {
+  const ov = overrides?.[unit.id]
+  if (ov) {
+    if (tier === 'toko') return ov.price_toko ?? ov.price_retail ?? (unit.price_toko ?? unit.price)
+    return ov.price_retail ?? unit.price
+  }
   return tier === 'toko' && unit.price_toko != null ? unit.price_toko : unit.price
 }

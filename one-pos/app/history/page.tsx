@@ -6,6 +6,7 @@ import type { User } from '@supabase/supabase-js'
 import type { Sale, SaleItem, Filter, PayFilter } from './_types'
 import { PAGE_SIZE, rp, fmtQty, PAY_LABEL, enrichSales, buildQuery } from './_helpers'
 import { ReturPanel } from './_components/ReturPanel'
+import { PageHeader } from '@/components/PageHeader'
 
 export default function HistoryPage() {
   const [user, setUser]       = useState<User | null | undefined>(undefined)
@@ -211,12 +212,7 @@ export default function HistoryPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col select-none">
 
       {/* Top bar */}
-      <div className="flex items-center px-4 py-3 bg-white border-b border-gray-200 shrink-0 gap-4">
-        <a href="/" className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">
-          ← POS
-        </a>
-        <span className="text-gray-900 font-bold text-base flex-1">Riwayat Transaksi</span>
-      </div>
+      <PageHeader title="Riwayat Transaksi" current="history" />
 
       {/* Filter + ringkasan */}
       <div className="flex flex-col gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 shrink-0">

@@ -178,17 +178,15 @@ export default function PelangganPage() {
     <div className="min-h-screen bg-gray-50 text-gray-900 pb-24">
 
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <a href="/" className="text-gray-500 hover:text-gray-900 transition-colors text-base">← POS</a>
-        <span className="text-gray-400">|</span>
-        <h1 className="text-gray-900 font-semibold text-base">Daftar Customer</h1>
-        <div className="flex-1" />
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4">
+        <span className="text-gray-900 font-bold text-base flex-1">Pelanggan</span>
         <button
           onClick={openAdd}
-          className="bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white text-base font-medium px-3 py-1.5 rounded-lg transition-colors"
+          className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
         >
           + Tambah
         </button>
+        <a href="/" className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">POS</a>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
@@ -295,31 +293,27 @@ export default function PelangganPage() {
             {search ? 'Tidak ada customer yang cocok.' : 'Belum ada customer.'}
           </p>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="space-y-2">
             {customers.map(c => (
-              <div key={c.id} className="py-3 flex items-start gap-3">
+              <div key={c.id} className="bg-white border border-gray-200 rounded-2xl px-4 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-gray-900 text-base font-medium">{c.name}</span>
-                    <span className={`text-sm px-1.5 py-0.5 rounded font-medium shrink-0 ${
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <span className="text-gray-900 text-base font-semibold">{c.name}</span>
+                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md shrink-0 ${
                       c.category === 'toko'
                         ? 'bg-amber-500/20 text-amber-600'
-                        : 'bg-blue-500/20 text-blue-400'
+                        : 'bg-blue-500/20 text-blue-500'
                     }`}>
                       {c.category === 'toko' ? 'Toko' : 'Retail'}
                     </span>
                   </div>
-                  {c.phone && (
-                    <p className="text-gray-500 text-sm mt-0.5">{c.phone}</p>
-                  )}
-                  {c.address && (
-                    <p className="text-gray-500 text-sm mt-0.5 truncate">{c.address}</p>
-                  )}
+                  {c.phone && <p className="text-gray-500 text-sm">{c.phone}</p>}
+                  {c.address && <p className="text-gray-400 text-sm truncate">{c.address}</p>}
                 </div>
                 {isAdmin && (
                   <button
                     onClick={() => openEdit(c)}
-                    className="text-gray-500 hover:text-gray-700 text-sm shrink-0 transition-colors pt-0.5"
+                    className="text-orange-600 hover:text-orange-700 text-sm font-medium shrink-0 transition-colors"
                   >
                     Edit
                   </button>

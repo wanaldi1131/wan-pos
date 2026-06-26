@@ -175,21 +175,18 @@ export default function PelangganPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 pb-24">
-
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4">
-        <span className="text-gray-900 font-bold text-base flex-1">Pelanggan</span>
-        <button
-          onClick={openAdd}
-          className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
-        >
-          + Tambah
-        </button>
-        <a href="/" className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">POS</a>
-      </div>
+    <div className="flex-1 overflow-y-auto bg-gray-50 text-gray-900 pb-24">
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-gray-900 font-bold text-base">Pelanggan</span>
+          <button
+            onClick={openAdd}
+            className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+          >
+            + Tambah
+          </button>
+        </div>
 
         {/* Search */}
         <input

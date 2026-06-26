@@ -22,4 +22,16 @@
 - Komentar & teks UI pakai Bahasa Indonesia.
 
 
-jangan langsung hapus dan commit perubahan
+jangan langsung commit dan push ke github untuk setiap perubahan
+
+
+## Deployment / Infra
+- Host: Vercel (plan Pro — ini komersial, Hobby tidak boleh dipakai).
+- Tiap app = project Vercel TERPISAH (POS, pengiriman hebel nanti). Bukan monolit.
+  Routing antar app lewat subdomain, bukan reverse proxy.
+- Supabase plan Pro (backup harian, project tidak di-pause). Region: Singapura.
+- Domain: subdomain per app (pos.*, hebel.*). HTTPS otomatis dari Vercel.
+- PWA wajib: installable di Android lewat browser, tanpa Play Store.
+  Butuh manifest.json + service worker (pakai next-pwa). HP/tablet-first.
+- Spend cap AKTIF di Vercel & Supabase sejak awal. Mulai dari tier dasar,
+  naik tier hanya kalau dashboard nunjukin tekanan nyata (reaktif, bukan antisipatif).

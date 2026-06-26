@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
-import { PageHeader } from '@/components/PageHeader'
 import TabAntaran    from '../admin/_tabs/TabAntaran'
 import TabBelumLunas from '../admin/_tabs/TabBelumLunas'
 import TabPendapatan from '../admin/_tabs/TabPendapatan'
@@ -29,6 +28,35 @@ export default function DashboardPage() {
       }
     })
   }, [sb])
+
+  // Fetch count badge langsung saat user siap, tanpa tunggu tab dibuka
+  useEffect(() => {
+    if (!user) return
+
+    // Belum lunas: cukup count
+    sb.from('sales')
+      .select('*', { count: 'exact', head: true })
+      .eq('pay_status', 'belum')
+      .eq('voided', false)
+      .then(({ count }) => setBelumLunasCount(count ?? 0))
+
+    // Antaran: perlu join untuk filter hasPendingDispatch
+    sb.from('sales')
+      .select('surat_jalan(status, surat_jalan_lines(base_qty)), sale_items(base_qty)')
+      .eq('fulfillment', 'antar')
+      .eq('voided', false)
+      .limit(200)
+      .then(({ data }) => {
+        const count = (data ?? []).filter((s: any) => {
+          const totalBase      = (s.sale_items ?? []).reduce((acc: number, i: any) => acc + Number(i.base_qty), 0)
+          const dispatchedBase = (s.surat_jalan ?? [])
+            .flatMap((sj: any) => sj.surat_jalan_lines ?? [])
+            .reduce((acc: number, l: any) => acc + Number(l.base_qty), 0)
+          return dispatchedBase < totalBase || (s.surat_jalan ?? []).some((sj: any) => sj.status === 'dimuat')
+        }).length
+        setAntaranCount(count)
+      })
+  }, [user, sb])
 
   useEffect(() => {
     if (user === null) { window.location.href = '/'; return }
@@ -57,8 +85,7 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col select-none">
-      <PageHeader title="Dashboard" current="dashboard" />
+    <div className="flex-1 overflow-y-auto bg-gray-50 flex flex-col select-none">
 
       <div className="flex gap-1.5 px-4 py-2.5 bg-gray-50 border-b border-gray-200 shrink-0 overflow-x-auto">
         {TABS.map(({ v, label, count, badgeCls }) => (

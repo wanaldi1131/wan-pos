@@ -10,7 +10,7 @@ import { ProductPickerPanel } from './_components/ProductPickerPanel'
 import { CheckoutOverlay } from './_components/CheckoutOverlay'
 import { SuccessOverlay } from './_components/SuccessOverlay'
 
-export default function PosPage({ user, kasirName }: { user: User; kasirName: string }) {
+export default function PosPage({ user }: { user: User }) {
   // Customer
   const [custQuery, setCustQuery]       = useState('')
   const [custResults, setCustResults]   = useState<Customer[]>([])
@@ -164,31 +164,7 @@ export default function PosPage({ user, kasirName }: { user: User; kasirName: st
   // ── Render ──────────────────────────────────────────────────
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden select-none">
-
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-gray-200 shrink-0">
-        <span className="text-gray-900 font-bold text-base">Adi Jaya POS</span>
-        <div className="flex items-center gap-4">
-          <a href="/kas"        className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">Kas</a>
-          <a href="/pelanggan"  className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">Pelanggan</a>
-          <a href="/history"    className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">Riwayat</a>
-          <a href="/dashboard"  className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">Dashboard</a>
-          <a href="/admin"      className="text-gray-500 hover:text-gray-900 text-base font-medium transition-colors">Admin</a>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-sm">{kasirName}</span>
-            <button
-              onClick={async () => {
-                await createClient().auth.signOut()
-                window.location.href = '/'
-              }}
-              className="text-gray-500 hover:text-red-600 text-sm transition-colors"
-            >
-              Keluar
-            </button>
-          </div>
-        </div>
-      </div>
+    <div className="flex-1 min-h-0 bg-gray-50 flex flex-col overflow-hidden select-none">
 
       <div className="flex flex-1 overflow-hidden">
 

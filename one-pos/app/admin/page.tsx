@@ -15,11 +15,11 @@ import TabPriceLists       from './_tabs/TabPriceLists'
 import TabWarehouse        from './_tabs/TabWarehouse'
 import TabStok             from './_tabs/TabStok'
 import TabTransfer         from './_tabs/TabTransfer'
-import { PageHeader }     from '@/components/PageHeader'
+import TabSelisihStok     from './_tabs/TabSelisihStok'
 
 type Tab = 'stok' | 'transfer' | 'produk' | 'kategori' | 'kasir'
          | 'supplier' | 'penerimaan' | 'retur_supplier' | 'invoice_pembelian'
-         | 'pembayaran_invoice' | 'price_lists' | 'warehouse'
+         | 'pembayaran_invoice' | 'price_lists' | 'warehouse' | 'selisih_stok'
 
 export default function AdminPage() {
   const sb = createClient()
@@ -63,12 +63,12 @@ export default function AdminPage() {
     { v: 'pembayaran_invoice', label: 'Pembayaran Invoice'},
     { v: 'price_lists',        label: 'Price Lists'       },
     { v: 'warehouse',          label: 'Gudang'            },
+    { v: 'selisih_stok',      label: 'Selisih Stok'     },
     { v: 'kasir',              label: 'Kasir'             },
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col select-none">
-      <PageHeader title="Admin" current="admin" />
+    <div className="flex-1 overflow-y-auto bg-gray-50 flex flex-col select-none">
 
       <div className="flex gap-1.5 px-4 py-2.5 bg-gray-50 border-b border-gray-200 shrink-0 overflow-x-auto">
         {TABS.map(({ v, label }) => (
@@ -98,6 +98,7 @@ export default function AdminPage() {
           {tab === 'pembayaran_invoice'&& <TabPembayaranInvoice user={user} />}
           {tab === 'price_lists'       && <TabPriceLists        user={user} />}
           {tab === 'warehouse'         && <TabWarehouse         user={user} />}
+          {tab === 'selisih_stok'     && <TabSelisihStok      user={user} />}
         </div>
       </div>
     </div>

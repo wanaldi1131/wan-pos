@@ -176,7 +176,6 @@ export default function TabTransfer({ user }: { user: User }) {
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [loading, setLoading]     = useState(true)
   const [expandedId, setExpandedId]   = useState<number | null>(null)
-  const [receivingId, setReceivingId] = useState<number | null>(null)
 
   // Master data
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -299,18 +298,7 @@ export default function TabTransfer({ user }: { user: User }) {
     load()
   }
 
-  // ── Receive ────────────────────────────────────────────────────
 
-  async function receiveTransfer(id: number) {
-    setReceivingId(id)
-    const { error } = await sb.rpc('receive_transfer', {
-      p_transfer_id: id,
-      p_received_by: user.id,
-    })
-    if (error) alert(error.message)
-    setReceivingId(null)
-    load()
-  }
 
   // ── Print surat jalan ──────────────────────────────────────────
 
@@ -581,15 +569,6 @@ export default function TabTransfer({ user }: { user: User }) {
                       >
                         Cetak Surat Jalan
                       </button>
-                      {inTransit && (
-                        <button
-                          onClick={() => receiveTransfer(t.id)}
-                          disabled={receivingId === t.id}
-                          className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40"
-                        >
-                          {receivingId === t.id ? 'Memproses…' : 'Tandai Diterima'}
-                        </button>
-                      )}
                     </div>
                   </div>
                 )}

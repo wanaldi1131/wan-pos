@@ -16,10 +16,12 @@ import TabWarehouse        from './_tabs/TabWarehouse'
 import TabStok             from './_tabs/TabStok'
 import TabTransfer         from './_tabs/TabTransfer'
 import TabSelisihStok     from './_tabs/TabSelisihStok'
+import TabRole            from './_tabs/TabRole'
 
 type Tab = 'stok' | 'transfer' | 'produk' | 'kategori' | 'kasir'
          | 'supplier' | 'penerimaan' | 'retur_supplier' | 'invoice_pembelian'
          | 'pembayaran_invoice' | 'price_lists' | 'warehouse' | 'selisih_stok'
+         | 'role'
 
 export default function AdminPage() {
   const sb = createClient()
@@ -65,6 +67,7 @@ export default function AdminPage() {
     { v: 'warehouse',          label: 'Gudang'            },
     { v: 'selisih_stok',      label: 'Selisih Stok'     },
     { v: 'kasir',              label: 'Kasir'             },
+    { v: 'role',               label: 'Role'              },
   ]
 
   return (
@@ -99,6 +102,7 @@ export default function AdminPage() {
           {tab === 'price_lists'       && <TabPriceLists        user={user} />}
           {tab === 'warehouse'         && <TabWarehouse         user={user} />}
           {tab === 'selisih_stok'     && <TabSelisihStok      user={user} />}
+          {tab === 'role'             && <TabRole             user={user} />}
         </div>
       </div>
     </div>

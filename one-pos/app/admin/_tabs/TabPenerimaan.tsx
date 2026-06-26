@@ -277,7 +277,7 @@ export default function TabPenerimaan({ user }: { user: User }) {
       factor: ti.unit?.factor_to_base ?? 1,
       transferQty: ti.qty_in_unit ?? (ti.unit?.factor_to_base ? ti.base_qty / ti.unit.factor_to_base : ti.base_qty),
       transferBaseQty: ti.base_qty,
-      receivedQty: '',  // kosong, user isi sendiri
+      receivedQty: String(ti.qty_in_unit ?? (ti.unit?.factor_to_base ? ti.base_qty / ti.unit.factor_to_base : ti.base_qty)),
     }))
     setTrfItems(mapped)
     setMode('transfer_form')
@@ -288,10 +288,6 @@ export default function TabPenerimaan({ user }: { user: User }) {
     if (!trfChecker) { setTrfErr('Pilih checker'); return }
     if (!trfDate)    { setTrfErr('Isi tanggal terima'); return }
     if (!selectedTransfer) return
-
-    // Semua item wajib diisi (boleh 0 jika tidak diterima)
-    const hasBlank = trfItems.some(i => i.receivedQty === '')
-    if (hasBlank) { setTrfErr('Isi qty semua barang (0 jika tidak diterima)'); return }
 
     setTrfSaving(true)
     const { error } = await sb.rpc('receive_transfer_with_gr', {
@@ -494,14 +490,11 @@ export default function TabPenerimaan({ user }: { user: User }) {
 
       {/* Tabel item — isi qty diterima */}
       <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-3">
-        <p className="text-gray-900 font-semibold text-base mb-3">
-          Detail Barang
-          <span className="text-gray-400 font-normal text-sm ml-2">— isi qty aktual yang diterima (0 jika tidak ada)</span>
-        </p>
+        <p className="text-gray-900 font-semibold text-base mb-3">Detail Barang</p>
         <div className="space-y-3">
           {trfItems.map((item, idx) => {
             const received = parseFloat(item.receivedQty)
-            const hasDiff  = item.receivedQty !== '' && !isNaN(received) && Math.abs(received - item.transferQty) > 0.0001
+            const hasDiff  = !isNaN(received) && Math.abs(received - item.transferQty) > 0.0001
             return (
               <div key={item.rowId} className={`border rounded-xl p-3 ${hasDiff ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}>
                 <div className="flex items-center justify-between mb-2">
@@ -521,7 +514,7 @@ export default function TabPenerimaan({ user }: { user: User }) {
                   </div>
                   <div className="text-gray-300">→</div>
                   <div className="flex-1">
-                    <p className="text-xs text-gray-400 mb-1">Diterima *</p>
+                    <p className="text-xs text-gray-400 mb-1">Diterima</p>
                     <input
                       type="number" inputMode="decimal" min={0} step="any"
                       value={item.receivedQty}
@@ -529,7 +522,6 @@ export default function TabPenerimaan({ user }: { user: User }) {
                         i === idx ? { ...r, receivedQty: e.target.value } : r
                       ))}
                       onFocus={e => e.target.select()}
-                      placeholder={fmtQty(item.transferQty)}
                       className={`w-full border rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-orange-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
                         hasDiff ? 'border-red-300 bg-white' : 'border-gray-200 bg-white'
                       }`}
